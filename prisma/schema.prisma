@@ -1,0 +1,192 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum DayPart {
+  FULL
+  FIRST_HALF
+  SECOND_HALF
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LEAVE
+  HOLIDAY
+  WEEKEND
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(EMPLOYEE)
+  createdAt    DateTime @default(now())
+  employee     Employee?
+}
+
+model Department {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  employees Employee[]
+}
+
+model Designation {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  employees Employee[]
+}
+
+model Location {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  employees Employee[]
+  holidays  Holiday[]
+}
+
+model Employee {
+  id                 String         @id @default(cuid())
+  empCode            String         @unique
+  firstName          String
+  lastName           String
+  email              String         @unique
+  phone              String?
+  photoUrl           String?
+  joinDate           DateTime       @db.Date
+  status             EmployeeStatus @default(ACTIVE)
+  userId             String?        @unique
+  user               User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  departmentId       String?
+  department         Department?    @relation(fields: [departmentId], references: [id])
+  designationId      String?
+  designation        Designation?   @relation(fields: [designationId], references: [id])
+  locationId         String?
+  location           Location?      @relation(fields: [locationId], references: [id])
+  reportingManagerId String?
+  reportingManager   Employee?      @relation("Reporting", fields: [reportingManagerId], references: [id], onDelete: SetNull)
+  reportees          Employee[]     @relation("Reporting")
+
+  leaveBalances     LeaveBalance[]
+  leaveRequests     LeaveRequest[]          @relation("Applicant")
+  leaveApprovals    LeaveRequest[]          @relation("Approver")
+  attendance        AttendanceLog[]
+  regularizations   RegularizationRequest[] @relation("RegApplicant")
+  regApprovals      RegularizationRequest[] @relation("RegApprover")
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+}
+
+model LeaveType {
+  id            String         @id @default(cuid())
+  name          String         @unique
+  code          String         @unique
+  annualQuota   Decimal        @db.Decimal(5, 1)
+  paid          Boolean        @default(true)
+  carryForward  Boolean        @default(false)
+  allowHalfDay  Boolean        @default(true)
+  active        Boolean        @default(true)
+  balances      LeaveBalance[]
+  requests      LeaveRequest[]
+}
+
+model LeaveBalance {
+  id          String    @id @default(cuid())
+  employeeId  String
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveTypeId String
+  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+  year        Int
+  granted     Decimal   @db.Decimal(5, 1)
+  used        Decimal   @default(0) @db.Decimal(5, 1)
+
+  @@unique([employeeId, leaveTypeId, year])
+}
+
+model LeaveRequest {
+  id           String        @id @default(cuid())
+  employeeId   String
+  employee     Employee      @relation("Applicant", fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveTypeId  String
+  leaveType    LeaveType     @relation(fields: [leaveTypeId], references: [id])
+  fromDate     DateTime      @db.Date
+  toDate       DateTime      @db.Date
+  dayPart      DayPart       @default(FULL)
+  days         Decimal       @db.Decimal(5, 1)
+  reason       String
+  status       RequestStatus @default(PENDING)
+  approverId   String?
+  approver     Employee?     @relation("Approver", fields: [approverId], references: [id], onDelete: SetNull)
+  decisionNote String?
+  decidedAt    DateTime?
+  createdAt    DateTime      @default(now())
+
+  @@index([employeeId, fromDate])
+  @@index([status])
+}
+
+model Holiday {
+  id         String    @id @default(cuid())
+  date       DateTime  @db.Date
+  name       String
+  // null = applies to all locations
+  locationId String?
+  location   Location? @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([date])
+}
+
+model AttendanceLog {
+  id         String           @id @default(cuid())
+  employeeId String
+  employee   Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date       DateTime         @db.Date
+  checkIn    DateTime?
+  checkOut   DateTime?
+  // minutes worked between checkIn and checkOut
+  workedMinutes Int           @default(0)
+  status     AttendanceStatus @default(PRESENT)
+  regularized Boolean         @default(false)
+
+  @@unique([employeeId, date])
+}
+
+model RegularizationRequest {
+  id           String        @id @default(cuid())
+  employeeId   String
+  employee     Employee      @relation("RegApplicant", fields: [employeeId], references: [id], onDelete: Cascade)
+  date         DateTime      @db.Date
+  checkIn      DateTime
+  checkOut     DateTime
+  reason       String
+  status       RequestStatus @default(PENDING)
+  approverId   String?
+  approver     Employee?     @relation("RegApprover", fields: [approverId], references: [id], onDelete: SetNull)
+  decisionNote String?
+  decidedAt    DateTime?
+  createdAt    DateTime      @default(now())
+
+  @@index([status])
+}
