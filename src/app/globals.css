@@ -1,26 +1,90 @@
 @import "tailwindcss";
 
+/* Design tokens. Components use the semantic utilities below (bg-surface,
+   text-ink-2, border-line, …) so light/dark is handled here, not per class. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --canvas: #f3f4f8;
+  --surface: #ffffff;
+  --surface-2: #f7f7fb;
+  --line: #e5e6ef;
+  --ink: #191b2c;
+  --ink-2: #5b5f76;
+  --ink-3: #8c90a6;
+  --brand: #4338ca;
+  --brand-hover: #3730a3;
+  --brand-soft: #eeedff;
+  --brand-ink: #3730a3;
+  --night: #16152b;
+  --night-2: #222140;
+  --marigold: #f5b83d;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --canvas: #0e0e1a;
+    --surface: #171728;
+    --surface-2: #1d1d31;
+    --line: #2a2a42;
+    --ink: #ececf6;
+    --ink-2: #a5a7be;
+    --ink-3: #6f7290;
+    --brand: #7c78ff;
+    --brand-hover: #948fff;
+    --brand-soft: #25244a;
+    --brand-ink: #b9b6ff;
+    --night: #0a0a14;
+    --night-2: #1a1930;
   }
 }
 
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-ink: var(--brand-ink);
+  --color-night: var(--night);
+  --color-night-2: var(--night-2);
+  --color-marigold: var(--marigold);
+  --font-sans: var(--font-body);
+  --font-display: var(--font-heading);
+  --font-mono: var(--font-geist-mono);
+  --shadow-card: 0 1px 2px rgb(22 21 43 / 0.04), 0 8px 24px -12px rgb(22 21 43 / 0.12);
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-body), system-ui, sans-serif;
+}
+
+::selection {
+  background: var(--brand-soft);
+  color: var(--brand-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+input[type="date"],
+input[type="time"],
+input[type="month"] {
+  color-scheme: light dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

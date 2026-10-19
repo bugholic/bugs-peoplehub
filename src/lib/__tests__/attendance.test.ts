@@ -1,6 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { deriveDayStatus, validateRegularization, workedMinutes } from "@/lib/attendance";
+import { combineWorkMode, deriveDayStatus, validateRegularization, workedMinutes } from "@/lib/attendance";
 import { ApiError } from "@/lib/errors";
+
+describe("combineWorkMode", () => {
+  it("takes the first session's mode", () => {
+    expect(combineWorkMode(null, "REMOTE")).toBe("REMOTE");
+  });
+
+  it("stays put while sessions match", () => {
+    expect(combineWorkMode("OFFICE", "OFFICE")).toBe("OFFICE");
+  });
+
+  it("becomes HYBRID once office and remote mix, and stays HYBRID", () => {
+    expect(combineWorkMode("OFFICE", "REMOTE")).toBe("HYBRID");
+    expect(combineWorkMode("HYBRID", "OFFICE")).toBe("HYBRID");
+  });
+});
 
 describe("deriveDayStatus", () => {
   const base = { date: "2026-10-19", today: "2026-10-20", hasLog: false, holiday: false, leave: null as "FULL" | "HALF" | null };

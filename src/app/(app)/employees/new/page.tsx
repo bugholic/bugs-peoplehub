@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, errorMessage } from "@/lib/api-client";
-import { Alert, Button, Field, Input, PageHeader, Select } from "@/components/ui";
+import { Alert, Button, Card, CardTitle, Field, Input, PageHeader, Select } from "@/components/ui";
 
 type Lookups = {
   departments: { id: string; name: string }[];
@@ -67,10 +67,13 @@ export default function NewEmployeePage() {
 
   return (
     <div>
-      <PageHeader title="Add employee" />
+      <PageHeader title="Add employee" description="Create a directory profile. Add a password to also give them a login." />
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
 
-      <form onSubmit={onSubmit} className="grid max-w-2xl gap-4 sm:grid-cols-2">
+      <form onSubmit={onSubmit} className="max-w-3xl space-y-5">
+        <Card>
+        <CardTitle>Personal details</CardTitle>
+        <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Employee code">
           <Input required value={form.empCode} onChange={(e) => set("empCode", e.target.value)} />
         </Field>
@@ -89,6 +92,11 @@ export default function NewEmployeePage() {
         <Field label="Join date">
           <Input type="date" required value={form.joinDate} onChange={(e) => set("joinDate", e.target.value)} />
         </Field>
+        </div>
+        </Card>
+        <Card>
+        <CardTitle>Role and access</CardTitle>
+        <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Department">
           <Select value={form.departmentId} onChange={(e) => set("departmentId", e.target.value)}>
             <option value="">—</option>
@@ -140,7 +148,9 @@ export default function NewEmployeePage() {
           <Input type="password" value={form.password} onChange={(e) => set("password", e.target.value)} minLength={8} />
         </Field>
 
-        <div className="sm:col-span-2">
+        </div>
+        </Card>
+        <div className="flex justify-end">
           <Button type="submit" disabled={saving}>
             {saving ? "Creating…" : "Create employee"}
           </Button>

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isIsoDate } from "./dates";
+import { badRequest } from "./errors";
 
 const isoDate = z.string().refine(isIsoDate, "Must be a date in YYYY-MM-DD format");
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Must be a time in HH:mm format");
@@ -92,6 +93,45 @@ export const regularizationSchema = z.object({
 
 export const regularizationListQuery = z.object({
   scope: z.enum(["mine", "team"]).default("mine"),
+  status: z.enum(["PENDING", "APPROVED", "REJECTED"]).optional(),
+});
+
+const latitude = z.number().min(-90).max(90);
+const longitude = z.number().min(-180).max(180);
+
+export const punchLocationSchema = z.object({
+  latitude,
+  longitude,
+  accuracy: z.number().min(0).optional(),
+});
+
+/** The punch body is optional: no body (location unavailable or denied) means null. */
+export async function readPunchLocation(req: Request) {
+  const text = await req.text();
+  if (!text.trim()) return null;
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    throw badRequest("Body must be valid JSON");
+  }
+  return punchLocationSchema.parse(body);
+}
+
+export const locationCreateSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  latitude: latitude.nullable().optional(),
+  longitude: longitude.nullable().optional(),
+  radiusMeters: z.number().int().min(20).max(5000).default(200),
+});
+
+export const locationUpdateSchema = locationCreateSchema.partial().extend({
+  // Redeclared without `.default(...)`, as in employeeUpdateSchema.
+  radiusMeters: z.number().int().min(20).max(5000).optional(),
+});
+
+export const remoteRequestListQuery = z.object({
+  scope: z.enum(["mine", "all"]).default("mine"),
   status: z.enum(["PENDING", "APPROVED", "REJECTED"]).optional(),
 });
 

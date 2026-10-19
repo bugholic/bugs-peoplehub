@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireSession, route } from "@/lib/authz";
-import { toIsoDate } from "@/lib/dates";
-import { checkIn } from "@/lib/attendance";
+import { readPunchLocation } from "@/lib/validators";
+import { checkIn, serializeLog } from "@/lib/attendance";
 
-export const POST = route(async () => {
+export const POST = route(async (req) => {
   const session = await requireSession();
-  const log = await checkIn(session.employeeId);
-  return NextResponse.json({ ...log, date: toIsoDate(log.date) });
+  const log = await checkIn(session.employeeId, await readPunchLocation(req));
+  return NextResponse.json(serializeLog(log));
 });

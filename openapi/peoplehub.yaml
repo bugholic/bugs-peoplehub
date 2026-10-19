@@ -124,11 +124,99 @@ components:
       properties:
         date: { type: string, format: date }
         status: { type: string, enum: [PRESENT, ABSENT, LEAVE, HALF_DAY_LEAVE, HOLIDAY, WEEKEND, UPCOMING] }
-        checkIn: { type: string, format: date-time, nullable: true }
-        checkOut: { type: string, format: date-time, nullable: true }
-        workedMinutes: { type: integer }
+        checkIn: { type: string, format: date-time, nullable: true, description: "First check-in of the day" }
+        checkOut: { type: string, format: date-time, nullable: true, description: "Last check-out of the day; null while a session is open" }
+        workedMinutes: { type: integer, description: "Total of the day's closed sessions" }
         regularized: { type: boolean }
         leaveType: { type: string, nullable: true }
+        workMode: { $ref: "#/components/schemas/DayWorkMode" }
+        remoteStatus: { type: string, enum: [PENDING, APPROVED, REJECTED], nullable: true, description: "Status of the day's remote work request, if any" }
+        openSince: { type: string, format: date-time, nullable: true, description: "Start of the open session, when checked in right now" }
+        sessions:
+          type: array
+          items: { $ref: "#/components/schemas/AttendanceSession" }
+    DayWorkMode:
+      type: string
+      enum: [OFFICE, REMOTE, HYBRID]
+      nullable: true
+      description: "OFFICE or REMOTE when every session of the day was; HYBRID when they differ"
+    AttendanceSession:
+      type: object
+      description: One check-in to check-out stretch. A day can have several.
+      properties:
+        id: { type: string }
+        checkIn: { type: string, format: date-time }
+        checkOut: { type: string, format: date-time, nullable: true, description: "null while the session is open" }
+        workMode: { type: string, enum: [OFFICE, REMOTE], nullable: true, description: "Decided at check-in from the office geofences" }
+        office:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            name: { type: string }
+    PunchLocation:
+      type: object
+      description: The device's position when punching. Omit it (or send no body) if location is unavailable; the day is then logged as remote.
+      required: [latitude, longitude]
+      properties:
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        accuracy: { type: number, minimum: 0, description: "Reported accuracy radius in metres" }
+    AttendanceLog:
+      type: object
+      properties:
+        id: { type: string }
+        date: { type: string, format: date }
+        checkIn: { type: string, format: date-time, nullable: true, description: "First check-in of the day" }
+        checkOut: { type: string, format: date-time, nullable: true, description: "Last check-out of the day; null while a session is open" }
+        workedMinutes: { type: integer, description: "Total of the day's closed sessions" }
+        workMode: { $ref: "#/components/schemas/DayWorkMode" }
+        openSince: { type: string, format: date-time, nullable: true }
+        sessions:
+          type: array
+          items: { $ref: "#/components/schemas/AttendanceSession" }
+        remoteRequest:
+          type: object
+          nullable: true
+          description: Present once a remote session of the day has been checked out of
+          properties:
+            id: { type: string }
+            status: { type: string, enum: [PENDING, APPROVED, REJECTED] }
+    OfficeLocation:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        latitude: { type: number, nullable: true }
+        longitude: { type: number, nullable: true }
+        radiusMeters: { type: integer }
+        isOffice: { type: boolean, description: "True when a geofence (latitude/longitude) is configured" }
+    RemoteWorkRequest:
+      type: object
+      properties:
+        id: { type: string }
+        employee:
+          type: object
+          properties:
+            id: { type: string }
+            name: { type: string }
+            empCode: { type: string }
+        date: { type: string, format: date }
+        checkIn: { type: string, format: date-time }
+        checkOut: { type: string, format: date-time }
+        workedMinutes: { type: integer, description: "Minutes worked remotely that day, across all remote sessions" }
+        latitude: { type: number, nullable: true, description: "Where the first remote session was checked in from" }
+        longitude: { type: number, nullable: true }
+        status: { type: string, enum: [PENDING, APPROVED, REJECTED] }
+        approver:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            name: { type: string }
+        decisionNote: { type: string, nullable: true }
+        decidedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
     RegularizationRequest:
       type: object
       properties:
@@ -576,18 +664,188 @@ paths:
   /api/attendance/check-in:
     post:
       tags: [Attendance]
-      summary: Check in for today (once per day)
+      summary: Start a work session (allowed again after checking out)
+      description: Inside any configured office geofence the session is logged as OFFICE; otherwise, or without a location, as REMOTE.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PunchLocation" }
       responses:
-        "200": { description: OK }
-        "409": { description: "Already checked in today" }
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AttendanceLog" }
+        "409": { description: "Already checked in (a session is open)" }
+        "422": { $ref: "#/components/responses/ValidationError" }
 
   /api/attendance/check-out:
     post:
       tags: [Attendance]
-      summary: Check out for today (repeatable; the latest wins)
+      summary: End the open work session
+      description: Checking out of a REMOTE session sends the day's remote work request to HR (admins), or adds the time to it. A request HR already decided goes back to PENDING when more remote time is added.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PunchLocation" }
       responses:
-        "200": { description: OK }
-        "409": { description: "Haven't checked in yet" }
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AttendanceLog" }
+        "409": { description: "Not checked in (no open session)" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/attendance/remote-requests:
+    get:
+      tags: [Attendance]
+      summary: List remote work requests (scope=all is admin only)
+      parameters:
+        - in: query
+          name: scope
+          schema: { type: string, enum: [mine, all], default: mine }
+        - in: query
+          name: status
+          schema: { type: string, enum: [PENDING, APPROVED, REJECTED] }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/RemoteWorkRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/attendance/remote-requests/{id}/approve:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Attendance]
+      summary: Approve a remote work request (admin only; never your own)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RemoteWorkRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Request is no longer pending" }
+
+  /api/attendance/remote-requests/{id}/reject:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Attendance]
+      summary: Reject a remote work request (admin only; never your own)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RemoteWorkRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Request is no longer pending" }
+
+  /api/locations:
+    get:
+      tags: [Attendance]
+      summary: List locations with their office geofences
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/OfficeLocation" }
+    post:
+      tags: [Attendance]
+      summary: Add a location, optionally with an office geofence (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                latitude: { type: number, nullable: true }
+                longitude: { type: number, nullable: true }
+                radiusMeters: { type: integer, minimum: 20, maximum: 5000, default: 200 }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OfficeLocation" }
+        "400": { description: "Only one of latitude/longitude given" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: "A location with this name already exists" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/locations/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [Attendance]
+      summary: Rename a location or set or clear its office geofence (admin only)
+      description: Latitude and longitude are set or cleared together; clearing them means check-ins there no longer count as office.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                latitude: { type: number, nullable: true }
+                longitude: { type: number, nullable: true }
+                radiusMeters: { type: integer, minimum: 20, maximum: 5000 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OfficeLocation" }
+        "400": { description: "Only one of latitude/longitude given" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "A location with this name already exists" }
+        "422": { $ref: "#/components/responses/ValidationError" }
 
   /api/attendance:
     get:

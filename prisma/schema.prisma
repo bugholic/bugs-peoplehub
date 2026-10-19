@@ -31,6 +31,13 @@ enum DayPart {
   SECOND_HALF
 }
 
+enum WorkMode {
+  OFFICE
+  REMOTE
+  // Day-level only: the day's sessions were a mix of office and remote.
+  HYBRID
+}
+
 enum AttendanceStatus {
   PRESENT
   ABSENT
@@ -40,11 +47,11 @@ enum AttendanceStatus {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
+  id           String    @id @default(cuid())
+  email        String    @unique
   passwordHash String
-  role         Role     @default(EMPLOYEE)
-  createdAt    DateTime @default(now())
+  role         Role      @default(EMPLOYEE)
+  createdAt    DateTime  @default(now())
   employee     Employee?
 }
 
@@ -61,10 +68,16 @@ model Designation {
 }
 
 model Location {
-  id        String     @id @default(cuid())
-  name      String     @unique
-  employees Employee[]
-  holidays  Holiday[]
+  id           String              @id @default(cuid())
+  name         String              @unique
+  // Office geofence: a check-in within radiusMeters of this point counts as office.
+  // null coordinates = not an office (e.g. "Remote").
+  latitude     Float?
+  longitude    Float?
+  radiusMeters Int                 @default(200)
+  employees    Employee[]
+  holidays     Holiday[]
+  sessions     AttendanceSession[]
 }
 
 model Employee {
@@ -89,27 +102,29 @@ model Employee {
   reportingManager   Employee?      @relation("Reporting", fields: [reportingManagerId], references: [id], onDelete: SetNull)
   reportees          Employee[]     @relation("Reporting")
 
-  leaveBalances     LeaveBalance[]
-  leaveRequests     LeaveRequest[]          @relation("Applicant")
-  leaveApprovals    LeaveRequest[]          @relation("Approver")
-  attendance        AttendanceLog[]
-  regularizations   RegularizationRequest[] @relation("RegApplicant")
-  regApprovals      RegularizationRequest[] @relation("RegApprover")
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
+  leaveBalances   LeaveBalance[]
+  leaveRequests   LeaveRequest[]          @relation("Applicant")
+  leaveApprovals  LeaveRequest[]          @relation("Approver")
+  attendance      AttendanceLog[]
+  regularizations RegularizationRequest[] @relation("RegApplicant")
+  regApprovals    RegularizationRequest[] @relation("RegApprover")
+  remoteRequests  RemoteWorkRequest[]     @relation("RemoteApplicant")
+  remoteApprovals RemoteWorkRequest[]     @relation("RemoteApprover")
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
 }
 
 model LeaveType {
-  id            String         @id @default(cuid())
-  name          String         @unique
-  code          String         @unique
-  annualQuota   Decimal        @db.Decimal(5, 1)
-  paid          Boolean        @default(true)
-  carryForward  Boolean        @default(false)
-  allowHalfDay  Boolean        @default(true)
-  active        Boolean        @default(true)
-  balances      LeaveBalance[]
-  requests      LeaveRequest[]
+  id           String         @id @default(cuid())
+  name         String         @unique
+  code         String         @unique
+  annualQuota  Decimal        @db.Decimal(5, 1)
+  paid         Boolean        @default(true)
+  carryForward Boolean        @default(false)
+  allowHalfDay Boolean        @default(true)
+  active       Boolean        @default(true)
+  balances     LeaveBalance[]
+  requests     LeaveRequest[]
 }
 
 model LeaveBalance {
@@ -159,18 +174,47 @@ model Holiday {
 }
 
 model AttendanceLog {
-  id         String           @id @default(cuid())
-  employeeId String
-  employee   Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  date       DateTime         @db.Date
-  checkIn    DateTime?
-  checkOut   DateTime?
-  // minutes worked between checkIn and checkOut
-  workedMinutes Int           @default(0)
-  status     AttendanceStatus @default(PRESENT)
-  regularized Boolean         @default(false)
+  id            String              @id @default(cuid())
+  employeeId    String
+  employee      Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date          DateTime            @db.Date
+  // First check-in and last check-out of the day; checkOut is null while a session is open.
+  checkIn       DateTime?
+  checkOut      DateTime?
+  // total of the day's closed sessions
+  workedMinutes Int                 @default(0)
+  status        AttendanceStatus    @default(PRESENT)
+  regularized   Boolean             @default(false)
+  // Summary of the sessions' modes; null for logs created before geofencing, or by regularization
+  workMode      WorkMode?
+  sessions      AttendanceSession[]
+  remoteRequest RemoteWorkRequest?
 
   @@unique([employeeId, date])
+}
+
+/**
+ * One check-in to check-out stretch; a day can have several (e.g. stepping out and back in).
+ */
+model AttendanceSession {
+  id                String        @id @default(cuid())
+  attendanceLogId   String
+  attendanceLog     AttendanceLog @relation(fields: [attendanceLogId], references: [id], onDelete: Cascade)
+  checkIn           DateTime
+  // null while the session is open
+  checkOut          DateTime?
+  // OFFICE or REMOTE, decided at check-in; null for sessions backfilled from older logs
+  workMode          WorkMode?
+  officeLocationId  String?
+  officeLocation    Location?     @relation(fields: [officeLocationId], references: [id], onDelete: SetNull)
+  checkInLatitude   Float?
+  checkInLongitude  Float?
+  checkInAccuracy   Float?
+  checkOutLatitude  Float?
+  checkOutLongitude Float?
+  checkOutAccuracy  Float?
+
+  @@index([attendanceLogId])
 }
 
 model RegularizationRequest {
@@ -187,6 +231,31 @@ model RegularizationRequest {
   decisionNote String?
   decidedAt    DateTime?
   createdAt    DateTime      @default(now())
+
+  @@index([status])
+}
+
+/**
+ * Raised when an employee checks out of a remote day; decided by HR (admins).
+ */
+model RemoteWorkRequest {
+  id              String        @id @default(cuid())
+  employeeId      String
+  employee        Employee      @relation("RemoteApplicant", fields: [employeeId], references: [id], onDelete: Cascade)
+  attendanceLogId String        @unique
+  attendanceLog   AttendanceLog @relation(fields: [attendanceLogId], references: [id], onDelete: Cascade)
+  date            DateTime      @db.Date
+  // First remote check-in and latest remote check-out of the day
+  checkIn         DateTime
+  checkOut        DateTime
+  // Total of the day's remote sessions
+  remoteMinutes   Int           @default(0)
+  status          RequestStatus @default(PENDING)
+  approverId      String?
+  approver        Employee?     @relation("RemoteApprover", fields: [approverId], references: [id], onDelete: SetNull)
+  decisionNote    String?
+  decidedAt       DateTime?
+  createdAt       DateTime      @default(now())
 
   @@index([status])
 }

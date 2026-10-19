@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiFetch, errorMessage } from "@/lib/api-client";
-import { Alert, Badge, Button, Card, Input, PageHeader, Spinner } from "@/components/ui";
+import { Alert, Avatar, Badge, Button, EmptyState, Input, PageHeader, Spinner, Table } from "@/components/ui";
+import { PlusIcon, SearchIcon } from "@/components/icons";
 
 type Employee = {
   id: string;
@@ -48,53 +49,53 @@ export default function EmployeesPage() {
     <div>
       <PageHeader
         title="Employees"
-        description={`${total} active`}
+        description={`${total} active ${total === 1 ? "person" : "people"} in the directory`}
         actions={
           isAdmin && (
             <Link href="/employees/new">
-              <Button>Add employee</Button>
+              <Button>
+                <PlusIcon size={16} />
+                Add employee
+              </Button>
             </Link>
           )
         }
       />
 
-      <Input placeholder="Search by name, code or email…" value={q} onChange={(e) => setQ(e.target.value)} className="mb-4 max-w-sm" />
+      <div className="relative mb-5 max-w-md">
+        <SearchIcon size={17} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-3" />
+        <Input placeholder="Search by name, code or email" value={q} onChange={(e) => setQ(e.target.value)} className="h-11 pl-10" aria-label="Search employees" />
+      </div>
 
-      {error && <Alert>{error}</Alert>}
+      {error && <div className="mb-4"><Alert>{error}</Alert></div>}
       {loading ? (
         <Spinner />
+      ) : items.length === 0 ? (
+        <EmptyState hint="Try a different name, employee code or email.">No one matches “{q}”</EmptyState>
       ) : (
-        <Card className="overflow-x-auto p-0">
-          <table className="w-full min-w-[640px] text-sm">
-            <thead className="border-b border-zinc-200 text-left text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-              <tr>
-                <th className="px-4 py-3 font-medium">Name</th>
-                <th className="px-4 py-3 font-medium">Code</th>
-                <th className="px-4 py-3 font-medium">Department</th>
-                <th className="px-4 py-3 font-medium">Designation</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((e) => (
-                <tr key={e.id} className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/50">
-                  <td className="px-4 py-3">
-                    <Link href={`/employees/${e.id}`} className="font-medium text-zinc-900 hover:underline dark:text-zinc-50">
+        <Table head={["Name", "Code", "Department", "Designation", "Status"]} minWidth={720}>
+          {items.map((e) => (
+            <tr key={e.id} className="group transition-colors hover:bg-surface-2">
+              <td className="px-5 py-3.5">
+                <Link href={`/employees/${e.id}`} className="flex items-center gap-3">
+                  <Avatar name={`${e.firstName} ${e.lastName}`} size="sm" />
+                  <span className="min-w-0">
+                    <span className="block font-semibold text-ink group-hover:text-brand-ink">
                       {e.firstName} {e.lastName}
-                    </Link>
-                    <p className="text-xs text-zinc-400">{e.email}</p>
-                  </td>
-                  <td className="px-4 py-3 text-zinc-500 dark:text-zinc-400">{e.empCode}</td>
-                  <td className="px-4 py-3 text-zinc-500 dark:text-zinc-400">{e.department?.name ?? "—"}</td>
-                  <td className="px-4 py-3 text-zinc-500 dark:text-zinc-400">{e.designation?.name ?? "—"}</td>
-                  <td className="px-4 py-3">
-                    <Badge status={e.status} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
+                    </span>
+                    <span className="block truncate text-[13px] text-ink-3">{e.email}</span>
+                  </span>
+                </Link>
+              </td>
+              <td className="px-5 py-3.5 font-mono text-[13px] text-ink-2">{e.empCode}</td>
+              <td className="px-5 py-3.5 text-ink-2">{e.department?.name ?? "—"}</td>
+              <td className="px-5 py-3.5 text-ink-2">{e.designation?.name ?? "—"}</td>
+              <td className="px-5 py-3.5">
+                <Badge status={e.status} />
+              </td>
+            </tr>
+          ))}
+        </Table>
       )}
     </div>
   );
