@@ -1,0 +1,18 @@
+$kind: http-request
+description: ""
+url: "{{baseUrl}}/api/holidays"
+method: POST
+headers:
+  Content-Type: application/json
+  Accept: application/json
+body:
+  type: json
+  content: |-
+    {
+      "date": "2025-06-07",
+      "name": "string",
+      "locationId": "string"
+    }
+settings: {}
+examples: ./.resources/Add a holiday (admin only).resources/examples
+order: 10000

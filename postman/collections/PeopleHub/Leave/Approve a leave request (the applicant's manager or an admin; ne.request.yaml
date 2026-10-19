@@ -1,0 +1,22 @@
+$kind: http-request
+name: Approve a leave request (the applicant's manager or an admin; never the applicant)
+description: ""
+url: "{{baseUrl}}/api/leave/requests/:id/approve"
+method: POST
+headers:
+  Content-Type: application/json
+  Accept: application/json
+pathVariables:
+  - key: id
+    value: string
+    disabled: false
+    description: "(Required) "
+body:
+  type: json
+  content: |-
+    {
+      "note": "string"
+    }
+settings: {}
+examples: ./.resources/Approve a leave request (the applicant's manager or an admin; ne.resources/examples
+order: 6000

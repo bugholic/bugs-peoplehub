@@ -1,0 +1,21 @@
+$kind: http-request
+description: ""
+url: "{{baseUrl}}/api/leave/types"
+method: POST
+headers:
+  Content-Type: application/json
+  Accept: application/json
+body:
+  type: json
+  content: |-
+    {
+      "name": "string",
+      "code": "string",
+      "annualQuota": 6101.526089478284,
+      "paid": true,
+      "carryForward": false,
+      "allowHalfDay": true
+    }
+settings: {}
+examples: ./.resources/Create a leave type (admin only).resources/examples
+order: 2000

@@ -1,0 +1,17 @@
+$kind: http-request
+description: ""
+url: "{{baseUrl}}/api/attendance?month=5186-24&employeeId=string"
+method: GET
+headers:
+  Accept: application/json
+queryParams:
+  - key: month
+    value: 5186-24
+    disabled: false
+    description: "(Required) "
+  - key: employeeId
+    value: string
+    disabled: false
+settings: {}
+examples: ./.resources/A month's attendance calendar and summary (defaults to self).resources/examples
+order: 3000

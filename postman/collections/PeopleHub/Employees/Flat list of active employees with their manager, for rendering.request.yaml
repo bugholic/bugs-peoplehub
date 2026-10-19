@@ -1,0 +1,8 @@
+$kind: http-request
+name: Flat list of active employees with their manager, for rendering an org chart
+description: ""
+url: "{{baseUrl}}/api/org-chart"
+method: GET
+settings: {}
+examples: ./.resources/Flat list of active employees with their manager, for rendering.resources/examples
+order: 6000

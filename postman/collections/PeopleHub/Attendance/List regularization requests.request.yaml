@@ -1,0 +1,12 @@
+$kind: http-request
+description: ""
+url: "{{baseUrl}}/api/attendance/regularizations?scope=mine&status=PENDING"
+method: GET
+headers:
+  Accept: application/json
+queryParams:
+  scope: mine
+  status: PENDING
+settings: {}
+examples: ./.resources/List regularization requests.resources/examples
+order: 5000

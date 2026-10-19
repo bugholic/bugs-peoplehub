@@ -1,0 +1,27 @@
+$kind: http-request
+description: ""
+url: "{{baseUrl}}/api/employees"
+method: POST
+headers:
+  Content-Type: application/json
+  Accept: application/json
+body:
+  type: json
+  content: |-
+    {
+      "empCode": "string",
+      "firstName": "string",
+      "lastName": "string",
+      "email": "7ow0tvphvkipc@kxPEtFKnLbivt.kvb",
+      "joinDate": "2003-06-24",
+      "phone": "string",
+      "departmentId": "string",
+      "designationId": "string",
+      "locationId": "string",
+      "reportingManagerId": "string",
+      "role": "EMPLOYEE",
+      "password": "stringstring"
+    }
+settings: {}
+examples: ./.resources/Create an employee (admin only).resources/examples
+order: 2000

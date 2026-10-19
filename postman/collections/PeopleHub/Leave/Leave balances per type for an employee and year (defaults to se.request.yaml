@@ -1,0 +1,13 @@
+$kind: http-request
+name: Leave balances per type for an employee and year (defaults to self, current year)
+description: ""
+url: "{{baseUrl}}/api/leave/balances?employeeId=string&year=6508"
+method: GET
+headers:
+  Accept: application/json
+queryParams:
+  employeeId: string
+  year: "6508"
+settings: {}
+examples: ./.resources/Leave balances per type for an employee and year (defaults to se.resources/examples
+order: 3000

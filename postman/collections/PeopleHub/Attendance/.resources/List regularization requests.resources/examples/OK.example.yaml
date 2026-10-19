@@ -1,0 +1,69 @@
+$kind: http-example
+request:
+  url: "{{baseUrl}}/api/attendance/regularizations?scope=mine&status=PENDING"
+  method: GET
+  headers:
+    - key: ph_session
+      value: <API Key>
+      description: "Added as a part of security scheme: apikey"
+    - key: Accept
+      value: application/json
+  queryParams:
+    scope: mine
+    status: PENDING
+  body:
+    type: text
+    content: ""
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    Content-Type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "items": [
+          {
+            "id": "string",
+            "employee": {
+              "id": "string",
+              "name": "string",
+              "empCode": "string"
+            },
+            "date": "1995-04-02",
+            "checkIn": "2026-09-19T10:54:33.652Z",
+            "checkOut": "1959-05-28T01:59:21.039Z",
+            "reason": "string",
+            "status": "APPROVED",
+            "approver": {
+              "id": "string",
+              "name": "string"
+            },
+            "decisionNote": "string",
+            "decidedAt": "1984-07-23T00:16:39.295Z",
+            "createdAt": "1973-05-09T08:35:02.838Z"
+          },
+          {
+            "id": "string",
+            "employee": {
+              "id": "string",
+              "name": "string",
+              "empCode": "string"
+            },
+            "date": "1955-11-19",
+            "checkIn": "2013-01-03T08:27:22.998Z",
+            "checkOut": "1978-09-25T17:04:33.391Z",
+            "reason": "string",
+            "status": "PENDING",
+            "approver": {
+              "id": "string",
+              "name": "string"
+            },
+            "decisionNote": "string",
+            "decidedAt": "1987-04-19T18:39:21.668Z",
+            "createdAt": "1982-02-01T19:03:03.533Z"
+          }
+        ]
+      }
+order: 1000

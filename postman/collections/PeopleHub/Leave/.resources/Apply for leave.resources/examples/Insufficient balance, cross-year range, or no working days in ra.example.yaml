@@ -1,0 +1,28 @@
+$kind: http-example
+name: Insufficient balance, cross-year range, or no working days in range
+request:
+  url: "{{baseUrl}}/api/leave/requests"
+  method: POST
+  headers:
+    - key: ph_session
+      value: <API Key>
+      description: "Added as a part of security scheme: apikey"
+  body:
+    type: json
+    content: |-
+      {
+        "leaveTypeId": "string",
+        "fromDate": "2012-10-29",
+        "toDate": "2025-04-23",
+        "reason": "string",
+        "dayPart": "FULL"
+      }
+response:
+  statusCode: 400
+  statusText: Bad Request
+  headers:
+    Content-Type: text/plain
+  body:
+    type: text
+    content: ""
+order: 2000

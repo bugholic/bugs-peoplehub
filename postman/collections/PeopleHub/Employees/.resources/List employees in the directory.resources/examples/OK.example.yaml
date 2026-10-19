@@ -1,0 +1,84 @@
+$kind: http-example
+request:
+  url: "{{baseUrl}}/api/employees?q=string&departmentId=string&locationId=string&status=ACTIVE&page=1&pageSize=25"
+  method: GET
+  headers:
+    - key: ph_session
+      value: <API Key>
+      description: "Added as a part of security scheme: apikey"
+    - key: Accept
+      value: application/json
+  queryParams:
+    q: string
+    departmentId: string
+    locationId: string
+    status: ACTIVE
+    page: "1"
+    pageSize: "25"
+  body:
+    type: text
+    content: ""
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    Content-Type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "items": [
+          {
+            "id": "string",
+            "empCode": "string",
+            "firstName": "string",
+            "lastName": "string",
+            "email": "string",
+            "phone": "string",
+            "photoUrl": "string",
+            "joinDate": "1976-08-19",
+            "status": "ACTIVE",
+            "department": {
+              "id": "string",
+              "name": "string"
+            },
+            "designation": {
+              "id": "string",
+              "name": "string"
+            },
+            "location": {
+              "id": "string",
+              "name": "string"
+            },
+            "reportingManagerId": "string"
+          },
+          {
+            "id": "string",
+            "empCode": "string",
+            "firstName": "string",
+            "lastName": "string",
+            "email": "string",
+            "phone": "string",
+            "photoUrl": "string",
+            "joinDate": "1990-04-27",
+            "status": "ACTIVE",
+            "department": {
+              "id": "string",
+              "name": "string"
+            },
+            "designation": {
+              "id": "string",
+              "name": "string"
+            },
+            "location": {
+              "id": "string",
+              "name": "string"
+            },
+            "reportingManagerId": "string"
+          }
+        ],
+        "total": 6615,
+        "page": 6851,
+        "pageSize": 5231
+      }
+order: 1000

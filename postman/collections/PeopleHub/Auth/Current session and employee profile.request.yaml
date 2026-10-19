@@ -1,0 +1,9 @@
+$kind: http-request
+description: ""
+url: "{{baseUrl}}/api/me"
+method: GET
+headers:
+  Accept: application/json
+settings: {}
+examples: ./.resources/Current session and employee profile.resources/examples
+order: 3000

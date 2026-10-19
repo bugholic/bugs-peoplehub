@@ -1,0 +1,16 @@
+$kind: http-request
+description: ""
+url: "{{baseUrl}}/api/employees?q=string&departmentId=string&locationId=string&status=ACTIVE&page=1&pageSize=25"
+method: GET
+headers:
+  Accept: application/json
+queryParams:
+  q: string
+  departmentId: string
+  locationId: string
+  status: ACTIVE
+  page: "1"
+  pageSize: "25"
+settings: {}
+examples: ./.resources/List employees in the directory.resources/examples
+order: 1000

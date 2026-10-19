@@ -1,0 +1,6 @@
+workflows:
+  syncSpecToCollection:
+    - spec: ../openapi/peoplehub.yaml
+      collection: ../postman/collections/PeopleHub
+      options:
+        folderStrategy: Tags

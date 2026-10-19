@@ -1,0 +1,7 @@
+$kind: http-request
+description: ""
+url: "{{baseUrl}}/api/attendance/check-in"
+method: POST
+settings: {}
+examples: ./.resources/Check in for today (once per day).resources/examples
+order: 1000

@@ -1,0 +1,20 @@
+$kind: http-request
+description: ""
+url: "{{baseUrl}}/api/leave/requests"
+method: POST
+headers:
+  Content-Type: application/json
+  Accept: application/json
+body:
+  type: json
+  content: |-
+    {
+      "leaveTypeId": "string",
+      "fromDate": "2012-10-29",
+      "toDate": "2025-04-23",
+      "reason": "string",
+      "dayPart": "FULL"
+    }
+settings: {}
+examples: ./.resources/Apply for leave.resources/examples
+order: 5000

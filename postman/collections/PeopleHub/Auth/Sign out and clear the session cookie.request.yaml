@@ -1,0 +1,7 @@
+$kind: http-request
+description: ""
+url: "{{baseUrl}}/api/auth/logout"
+method: POST
+settings: {}
+examples: ./.resources/Sign out and clear the session cookie.resources/examples
+order: 2000

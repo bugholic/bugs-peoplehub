@@ -1,0 +1,13 @@
+$kind: collection
+description: Employee directory, leave and attendance for PeopleHub.
+variables:
+  baseUrl: http://localhost:3000
+  apiKey: ""
+auth:
+  - id: da95a0b3-85ef-4b66-b9be-3c35f5acf72b
+    type: apikey
+    name: apikey auth
+    credentials:
+      key: ph_session
+      value: "{{apiKey}}"
+      in: header

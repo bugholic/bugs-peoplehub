@@ -1,0 +1,52 @@
+$kind: http-example
+request:
+  url: "{{baseUrl}}/api/employees"
+  method: POST
+  headers:
+    - key: ph_session
+      value: <API Key>
+      description: "Added as a part of security scheme: apikey"
+    - key: Accept
+      value: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "empCode": "string",
+        "firstName": "string",
+        "lastName": "string",
+        "email": "7ow0tvphvkipc@kxPEtFKnLbivt.kvb",
+        "joinDate": "2003-06-24",
+        "phone": "string",
+        "departmentId": "string",
+        "designationId": "string",
+        "locationId": "string",
+        "reportingManagerId": "string",
+        "role": "EMPLOYEE",
+        "password": "stringstring"
+      }
+response:
+  statusCode: 403
+  statusText: Forbidden
+  headers:
+    Content-Type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "error": {
+          "code": "string",
+          "message": "string",
+          "details": [
+            {
+              "path": "string",
+              "message": "string"
+            },
+            {
+              "path": "string",
+              "message": "string"
+            }
+          ]
+        }
+      }
+order: 2000

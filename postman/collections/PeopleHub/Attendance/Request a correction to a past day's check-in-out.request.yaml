@@ -1,0 +1,20 @@
+$kind: http-request
+name: Request a correction to a past day's check-in/out
+description: ""
+url: "{{baseUrl}}/api/attendance/regularizations"
+method: POST
+headers:
+  Content-Type: application/json
+  Accept: application/json
+body:
+  type: json
+  content: |-
+    {
+      "date": "2002-01-23",
+      "checkIn": "05:21",
+      "checkOut": "20:46",
+      "reason": "string"
+    }
+settings: {}
+examples: ./.resources/Request a correction to a past day's check-in-out.resources/examples
+order: 6000

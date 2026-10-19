@@ -1,0 +1,80 @@
+$kind: http-example
+request:
+  url: "{{baseUrl}}/api/leave/requests?scope=mine&status=PENDING&year=6508"
+  method: GET
+  headers:
+    - key: ph_session
+      value: <API Key>
+      description: "Added as a part of security scheme: apikey"
+    - key: Accept
+      value: application/json
+  queryParams:
+    scope: mine
+    status: PENDING
+    year: "6508"
+  body:
+    type: text
+    content: ""
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    Content-Type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "items": [
+          {
+            "id": "string",
+            "employee": {
+              "id": "string",
+              "name": "string",
+              "empCode": "string"
+            },
+            "leaveType": {
+              "id": "string",
+              "name": "string"
+            },
+            "fromDate": "1984-01-15",
+            "toDate": "1958-04-08",
+            "dayPart": "FULL",
+            "days": 4714.841400273144,
+            "reason": "string",
+            "status": "APPROVED",
+            "approver": {
+              "id": "string",
+              "name": "string"
+            },
+            "decisionNote": "string",
+            "decidedAt": "1956-08-18T03:49:10.945Z",
+            "createdAt": "1972-02-24T04:58:38.040Z"
+          },
+          {
+            "id": "string",
+            "employee": {
+              "id": "string",
+              "name": "string",
+              "empCode": "string"
+            },
+            "leaveType": {
+              "id": "string",
+              "name": "string"
+            },
+            "fromDate": "1988-08-15",
+            "toDate": "1996-09-03",
+            "dayPart": "FIRST_HALF",
+            "days": 1578.4591529518366,
+            "reason": "string",
+            "status": "APPROVED",
+            "approver": {
+              "id": "string",
+              "name": "string"
+            },
+            "decisionNote": "string",
+            "decidedAt": "1997-06-22T09:34:29.605Z",
+            "createdAt": "2014-12-18T14:09:52.215Z"
+          }
+        ]
+      }
+order: 1000

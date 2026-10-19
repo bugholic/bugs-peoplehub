@@ -1,0 +1,13 @@
+$kind: http-request
+description: ""
+url: "{{baseUrl}}/api/leave/requests?scope=mine&status=PENDING&year=6508"
+method: GET
+headers:
+  Accept: application/json
+queryParams:
+  scope: mine
+  status: PENDING
+  year: "6508"
+settings: {}
+examples: ./.resources/List leave requests.resources/examples
+order: 4000

@@ -28,7 +28,12 @@ export const employeeCreateSchema = z.object({
 export const employeeUpdateSchema = employeeCreateSchema
   .omit({ password: true })
   .partial()
-  .extend({ status: z.enum(["ACTIVE", "INACTIVE"]).optional() });
+  .extend({
+    // Redeclared without `.default(...)`: partial() keeps each field's default,
+    // which would silently resurrect role: "EMPLOYEE" on every partial update.
+    role: z.enum(["ADMIN", "MANAGER", "EMPLOYEE"]).optional(),
+    status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
+  });
 
 /** Fields an employee may change on their own profile. */
 export const selfUpdateSchema = z.object({ phone: z.string().trim().max(30).nullable() }).strict();

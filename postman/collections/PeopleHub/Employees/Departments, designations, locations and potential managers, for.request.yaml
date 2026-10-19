@@ -1,0 +1,8 @@
+$kind: http-request
+name: Departments, designations, locations and potential managers, for form dropdowns
+description: ""
+url: "{{baseUrl}}/api/lookups"
+method: GET
+settings: {}
+examples: ./.resources/Departments, designations, locations and potential managers, for.resources/examples
+order: 7000

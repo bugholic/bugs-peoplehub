@@ -1,0 +1,48 @@
+$kind: http-example
+request:
+  url: "{{baseUrl}}/api/attendance/regularizations"
+  method: POST
+  headers:
+    - key: ph_session
+      value: <API Key>
+      description: "Added as a part of security scheme: apikey"
+    - key: Accept
+      value: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "date": "2002-01-23",
+        "checkIn": "05:21",
+        "checkOut": "20:46",
+        "reason": "string"
+      }
+response:
+  statusCode: 201
+  statusText: Created
+  headers:
+    Content-Type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "id": "string",
+        "employee": {
+          "id": "string",
+          "name": "string",
+          "empCode": "string"
+        },
+        "date": "1974-09-24",
+        "checkIn": "1993-01-26T18:16:58.312Z",
+        "checkOut": "1948-03-03T15:18:52.830Z",
+        "reason": "string",
+        "status": "REJECTED",
+        "approver": {
+          "id": "string",
+          "name": "string"
+        },
+        "decisionNote": "string",
+        "decidedAt": "1981-02-04T22:26:43.806Z",
+        "createdAt": "1970-02-21T05:36:10.205Z"
+      }
+order: 1000

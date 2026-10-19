@@ -1,0 +1,5 @@
+name: local
+values:
+  - key: baseUrl
+    value: http://localhost:3100
+    enabled: true

@@ -1,0 +1,7 @@
+$kind: http-request
+description: ""
+url: "{{baseUrl}}/api/leave/types"
+method: GET
+settings: {}
+examples: ./.resources/List active leave types.resources/examples
+order: 1000

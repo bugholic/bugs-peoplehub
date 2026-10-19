@@ -1,0 +1,15 @@
+$kind: http-request
+name: Cancel your own leave request (approved leave only before it starts)
+description: ""
+url: "{{baseUrl}}/api/leave/requests/:id/cancel"
+method: POST
+headers:
+  Accept: application/json
+pathVariables:
+  - key: id
+    value: string
+    disabled: false
+    description: "(Required) "
+settings: {}
+examples: ./.resources/Cancel your own leave request (approved leave only before it sta.resources/examples
+order: 8000

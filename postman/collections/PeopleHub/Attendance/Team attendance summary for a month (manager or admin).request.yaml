@@ -1,0 +1,17 @@
+$kind: http-request
+description: ""
+url: "{{baseUrl}}/api/attendance/report?month=5186-24&format=json"
+method: GET
+headers:
+  Accept: application/json
+queryParams:
+  - key: month
+    value: 5186-24
+    disabled: false
+    description: "(Required) "
+  - key: format
+    value: json
+    disabled: false
+settings: {}
+examples: ./.resources/Team attendance summary for a month (manager or admin).resources/examples
+order: 4000

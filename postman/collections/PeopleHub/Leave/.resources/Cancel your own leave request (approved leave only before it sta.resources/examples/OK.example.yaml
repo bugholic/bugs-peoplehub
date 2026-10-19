@@ -1,0 +1,52 @@
+$kind: http-example
+request:
+  url: "{{baseUrl}}/api/leave/requests/:id/cancel"
+  method: POST
+  headers:
+    - key: ph_session
+      value: <API Key>
+      description: "Added as a part of security scheme: apikey"
+    - key: Accept
+      value: application/json
+  pathVariables:
+    - key: id
+      value: string
+      disabled: false
+      description: "(Required) "
+  body:
+    type: text
+    content: ""
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    Content-Type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "id": "string",
+        "employee": {
+          "id": "string",
+          "name": "string",
+          "empCode": "string"
+        },
+        "leaveType": {
+          "id": "string",
+          "name": "string"
+        },
+        "fromDate": "1954-02-15",
+        "toDate": "2019-03-26",
+        "dayPart": "FIRST_HALF",
+        "days": 4484.6185483038425,
+        "reason": "string",
+        "status": "APPROVED",
+        "approver": {
+          "id": "string",
+          "name": "string"
+        },
+        "decisionNote": "string",
+        "decidedAt": "1960-07-14T15:03:01.339Z",
+        "createdAt": "1986-03-25T10:57:37.474Z"
+      }
+order: 1000

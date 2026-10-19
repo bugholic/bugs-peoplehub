@@ -1,0 +1,56 @@
+$kind: http-example
+request:
+  url: "{{baseUrl}}/api/attendance?month=5186-24&employeeId=string"
+  method: GET
+  headers:
+    - key: ph_session
+      value: <API Key>
+      description: "Added as a part of security scheme: apikey"
+    - key: Accept
+      value: application/json
+  queryParams:
+    month: 5186-24
+    employeeId: string
+  body:
+    type: text
+    content: ""
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    Content-Type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "employeeId": "string",
+        "month": "string",
+        "days": [
+          {
+            "date": "2012-06-06",
+            "status": "HALF_DAY_LEAVE",
+            "checkIn": "1953-10-13T02:50:22.134Z",
+            "checkOut": "1947-01-10T02:50:50.509Z",
+            "workedMinutes": 1592,
+            "regularized": false,
+            "leaveType": "string"
+          },
+          {
+            "date": "2015-12-12",
+            "status": "UPCOMING",
+            "checkIn": "2005-08-25T20:11:53.390Z",
+            "checkOut": "2007-01-04T12:31:07.290Z",
+            "workedMinutes": 6630,
+            "regularized": true,
+            "leaveType": "string"
+          }
+        ],
+        "summary": {
+          "present": 1539.2689383588731,
+          "absent": 6106,
+          "leave": 989.9791609495878,
+          "holidays": 8289,
+          "workedMinutes": 7769
+        }
+      }
+order: 1000

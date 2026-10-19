@@ -1,0 +1,15 @@
+$kind: http-request
+description: ""
+url: "{{baseUrl}}/api/holidays?year=6508&locationId=string"
+method: GET
+queryParams:
+  - key: year
+    value: "6508"
+    disabled: false
+    description: "(Required) "
+  - key: locationId
+    value: string
+    disabled: false
+settings: {}
+examples: ./.resources/List holidays for a year.resources/examples
+order: 9000

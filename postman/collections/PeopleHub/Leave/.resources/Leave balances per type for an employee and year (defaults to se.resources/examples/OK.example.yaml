@@ -1,0 +1,51 @@
+$kind: http-example
+request:
+  url: "{{baseUrl}}/api/leave/balances?employeeId=string&year=6508"
+  method: GET
+  headers:
+    - key: ph_session
+      value: <API Key>
+      description: "Added as a part of security scheme: apikey"
+    - key: Accept
+      value: application/json
+  queryParams:
+    employeeId: string
+    year: "6508"
+  body:
+    type: text
+    content: ""
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    Content-Type: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "employeeId": "string",
+        "year": 9627,
+        "balances": [
+          {
+            "leaveTypeId": "string",
+            "code": "string",
+            "name": "string",
+            "paid": true,
+            "granted": 1464.9658044800162,
+            "used": 1.438269391655922,
+            "pending": 6414.125952869654,
+            "available": 9812.685658689588
+          },
+          {
+            "leaveTypeId": "string",
+            "code": "string",
+            "name": "string",
+            "paid": true,
+            "granted": 6515.559148974717,
+            "used": 9535.430455580354,
+            "pending": 5722.848097793758,
+            "available": 7867.396112997085
+          }
+        ]
+      }
+order: 1000
