@@ -22,10 +22,9 @@ type Employee = {
   designation: Lookup | null;
   location: Lookup | null;
   reportingManager: { id: string; firstName: string; lastName: string } | null;
-  user: { role: string } | null;
+  hasLogin: boolean;
 };
 
-const ROLE_LABEL: Record<string, string> = { ADMIN: "Admin", MANAGER: "Manager", EMPLOYEE: "Employee" };
 
 export default function EmployeeDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -155,7 +154,7 @@ export default function EmployeeDetailPage() {
               }
             />
             <Detail icon={<CalendarIcon size={17} />} label="Joined" value={formatDate(employee.joinDate)} />
-            <Detail icon={<BriefcaseIcon size={17} />} label="System role" value={employee.user ? ROLE_LABEL[employee.user.role] ?? employee.user.role : "No login"} />
+            <Detail icon={<BriefcaseIcon size={17} />} label="Account" value={employee.hasLogin ? "Joined" : "Not joined yet"} />
           </dl>
         </Card>
 

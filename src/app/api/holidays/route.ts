@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { assertRefsInOrg } from "@/lib/refs";
 import { requireSession, route, readJson } from "@/lib/authz";
 import { holidaySchema, parseQuery } from "@/lib/validators";
 import { toIsoDate } from "@/lib/dates";
@@ -31,6 +32,7 @@ export const GET = route(async (req) => {
 export const POST = route(async (req) => {
   await requireSession("ADMIN");
   const body = holidaySchema.parse(await readJson(req));
+  await assertRefsInOrg({ locationId: body.locationId });
   const holiday = await db.holiday.create({
     data: { date: new Date(`${body.date}T00:00:00Z`), name: body.name, locationId: body.locationId },
   });

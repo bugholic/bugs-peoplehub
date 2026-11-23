@@ -22,6 +22,6 @@ export function assertGeofencePair({ latitude, longitude }: { latitude?: number 
 }
 
 export async function assertUniqueLocationName(name: string) {
-  const clash = await db.location.findUnique({ where: { name } });
+  const clash = await db.location.findFirst({ where: { name } });
   if (clash) throw conflict("A location with this name already exists", "DUPLICATE");
 }

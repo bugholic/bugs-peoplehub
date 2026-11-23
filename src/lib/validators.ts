@@ -6,11 +6,6 @@ const isoDate = z.string().refine(isIsoDate, "Must be a date in YYYY-MM-DD forma
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Must be a time in HH:mm format");
 const id = z.string().min(1);
 
-export const loginSchema = z.object({
-  email: z.email(),
-  password: z.string().min(1),
-});
-
 export const employeeCreateSchema = z.object({
   empCode: z.string().trim().min(1).max(20),
   firstName: z.string().trim().min(1).max(60),
@@ -22,19 +17,12 @@ export const employeeCreateSchema = z.object({
   designationId: id.optional().nullable(),
   locationId: id.optional().nullable(),
   reportingManagerId: id.optional().nullable(),
-  role: z.enum(["ADMIN", "MANAGER", "EMPLOYEE"]).default("EMPLOYEE"),
-  password: z.string().min(8).optional(),
 });
 
-export const employeeUpdateSchema = employeeCreateSchema
-  .omit({ password: true })
-  .partial()
-  .extend({
-    // Redeclared without `.default(...)`: partial() keeps each field's default,
-    // which would silently resurrect role: "EMPLOYEE" on every partial update.
-    role: z.enum(["ADMIN", "MANAGER", "EMPLOYEE"]).optional(),
-    status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
-  });
+// Roles live in Clerk (organization roles), not on the employee record.
+export const employeeUpdateSchema = employeeCreateSchema.partial().extend({
+  status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
+});
 
 /** Fields an employee may change on their own profile. */
 export const selfUpdateSchema = z.object({ phone: z.string().trim().max(30).nullable() }).strict();
@@ -139,3 +127,5 @@ export function parseQuery<T extends z.ZodType>(schema: T, req: Request): z.infe
   const params = Object.fromEntries(new URL(req.url).searchParams);
   return schema.parse(params);
 }
+
+export const nameSchema = z.object({ name: z.string().trim().min(1).max(80) });

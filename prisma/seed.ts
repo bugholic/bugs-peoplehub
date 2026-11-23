@@ -1,12 +1,20 @@
 import "dotenv/config";
-import bcrypt from "bcryptjs";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 const db = new PrismaClient({ adapter });
 
-const DEMO_PASSWORD = "Password@123";
+/**
+ * Demo data for ONE organization. Usage:
+ *   SEED_ORG_ID=org_xxx [SEED_ADMIN_EMAIL=you@company.com] npm run db:seed
+ * (org id is shown in the Clerk Dashboard -> Organizations). Only that org's rows are replaced.
+ * Employees have no login; each person is linked automatically when they join the org
+ * with a matching verified email, so set SEED_ADMIN_EMAIL to your own address.
+ */
+const ORG = process.env.SEED_ORG_ID;
+if (!ORG) throw new Error("Set SEED_ORG_ID to the Clerk organization id to seed");
+const ADMIN_EMAIL = (process.env.SEED_ADMIN_EMAIL ?? "admin@peoplehub.test").toLowerCase();
 
 const DEPARTMENTS = ["Engineering", "Sales", "Marketing", "Human Resources", "Finance"];
 const LOCATIONS = ["Bengaluru HQ", "Remote"];
@@ -56,37 +64,38 @@ function workdaysBack(from: Date, count: number): Date[] {
 }
 
 async function main() {
-  console.log("Clearing existing data...");
-  await db.regularizationRequest.deleteMany();
-  await db.attendanceLog.deleteMany();
-  await db.leaveRequest.deleteMany();
-  await db.leaveBalance.deleteMany();
-  await db.holiday.deleteMany();
-  await db.leaveType.deleteMany();
-  await db.employee.deleteMany();
-  await db.user.deleteMany();
-  await db.department.deleteMany();
-  await db.designation.deleteMany();
-  await db.location.deleteMany();
+  console.log(`Clearing existing data for ${ORG}...`);
+  const where = { organizationId: ORG };
+  await db.remoteWorkRequest.deleteMany({ where });
+  await db.regularizationRequest.deleteMany({ where });
+  await db.attendanceSession.deleteMany({ where });
+  await db.attendanceLog.deleteMany({ where });
+  await db.leaveRequest.deleteMany({ where });
+  await db.leaveBalance.deleteMany({ where });
+  await db.holiday.deleteMany({ where });
+  await db.leaveType.deleteMany({ where });
+  await db.employee.deleteMany({ where });
+  await db.department.deleteMany({ where });
+  await db.designation.deleteMany({ where });
+  await db.location.deleteMany({ where });
 
   console.log("Seeding lookups...");
-  const departments = await Promise.all(DEPARTMENTS.map((name) => db.department.create({ data: { name } })));
-  const locations = await Promise.all(LOCATIONS.map((name) => db.location.create({ data: { name } })));
-  const designations = await Promise.all(DESIGNATIONS.map((name) => db.designation.create({ data: { name } })));
-  const leaveTypes = await Promise.all(LEAVE_TYPES.map((t) => db.leaveType.create({ data: t })));
+  const departments = await Promise.all(DEPARTMENTS.map((name) => db.department.create({ data: { name, organizationId: ORG } })));
+  const locations = await Promise.all(LOCATIONS.map((name) => db.location.create({ data: { name, organizationId: ORG } })));
+  const designations = await Promise.all(DESIGNATIONS.map((name) => db.designation.create({ data: { name, organizationId: ORG } })));
+  const leaveTypes = await Promise.all(LEAVE_TYPES.map((t) => db.leaveType.create({ data: { ...t, organizationId: ORG } })));
   const deptByName = Object.fromEntries(departments.map((d) => [d.name, d]));
   const desigByName = Object.fromEntries(designations.map((d) => [d.name, d]));
 
   const year = new Date().getUTCFullYear();
-  const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10);
 
   console.log("Seeding holidays...");
   await db.holiday.createMany({
     data: [
-      { date: new Date(`${year}-01-26T00:00:00Z`), name: "Republic Day" },
-      { date: new Date(`${year}-08-15T00:00:00Z`), name: "Independence Day" },
-      { date: new Date(`${year}-10-02T00:00:00Z`), name: "Gandhi Jayanti" },
-      { date: new Date(`${year}-12-25T00:00:00Z`), name: "Christmas" },
+      { date: new Date(`${year}-01-26T00:00:00Z`), name: "Republic Day", organizationId: ORG },
+      { date: new Date(`${year}-08-15T00:00:00Z`), name: "Independence Day", organizationId: ORG },
+      { date: new Date(`${year}-10-02T00:00:00Z`), name: "Gandhi Jayanti", organizationId: ORG },
+      { date: new Date(`${year}-12-25T00:00:00Z`), name: "Christmas", organizationId: ORG },
     ],
   });
 
@@ -108,7 +117,7 @@ async function main() {
     empCode: "EMP001",
     first: "Asha",
     last: "Admin",
-    email: "admin@peoplehub.test",
+    email: ADMIN_EMAIL,
     department: "Human Resources",
     designation: "Chief Executive Officer",
     location: "Bengaluru HQ",
@@ -140,7 +149,6 @@ async function main() {
       withLogin: dept === "Engineering",
     });
   });
-  if (plans[1].withLogin) plans[1].email = "manager@peoplehub.test";
 
   const deptCodes = plans.filter((p) => p.managerCode === "EMP001").reduce<Record<string, string>>((acc, p) => {
     acc[p.department] = p.empCode;
@@ -183,15 +191,11 @@ async function main() {
   console.log(`Seeding ${plans.length} employees...`);
   const idByCode: Record<string, string> = {};
   for (const p of plans) {
-    let userId: string | undefined;
-    if (p.withLogin) {
-      const user = await db.user.create({ data: { email: p.email, passwordHash, role: p.role } });
-      userId = user.id;
-    }
     const joinDate = new Date();
     joinDate.setUTCFullYear(joinDate.getUTCFullYear() - 1);
     const employee = await db.employee.create({
       data: {
+        organizationId: ORG,
         empCode: p.empCode,
         firstName: p.first,
         lastName: p.last,
@@ -201,7 +205,6 @@ async function main() {
         designationId: desigByName[p.designation].id,
         locationId: locations.find((l) => l.name === p.location)!.id,
         reportingManagerId: p.managerCode ? idByCode[p.managerCode] : null,
-        userId,
       },
     });
     idByCode[p.empCode] = employee.id;
@@ -212,7 +215,7 @@ async function main() {
     for (const t of leaveTypes) {
       if (t.code === "LOP") continue;
       await db.leaveBalance.create({
-        data: { employeeId: empId, leaveTypeId: t.id, year, granted: t.annualQuota, used: 0 },
+        data: { organizationId: ORG, employeeId: empId, leaveTypeId: t.id, year, granted: t.annualQuota, used: 0 },
       });
     }
   }
@@ -229,15 +232,12 @@ async function main() {
       checkOut.setUTCHours(12, 30 + (idx % 15), 0, 0); // ~18:00-18:15 IST
       const workedMinutes = Math.round((checkOut.getTime() - checkIn.getTime()) / 60000);
       await db.attendanceLog.create({
-        data: { employeeId: empId, date: day, checkIn, checkOut, workedMinutes, status: "PRESENT" },
+        data: { organizationId: ORG, employeeId: empId, date: day, checkIn, checkOut, workedMinutes, status: "PRESENT" },
       });
     }
   }
 
-  console.log("Done. Demo logins (password 'Password@123'):");
-  console.log("  Admin:    admin@peoplehub.test");
-  console.log("  Manager:  manager@peoplehub.test");
-  console.log("  Employee: employee@peoplehub.test");
+  console.log(`Done. Sign in to this org with ${ADMIN_EMAIL} to be linked to the admin record (assign the Admin role in Clerk).`);
 }
 
 main()

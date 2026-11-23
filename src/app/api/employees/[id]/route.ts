@@ -3,11 +3,14 @@ import { db } from "@/lib/db";
 import { requireSession, route, readJson, notFound, forbidden, isAdmin } from "@/lib/authz";
 import { employeeUpdateSchema, selfUpdateSchema } from "@/lib/validators";
 import { toIsoDate } from "@/lib/dates";
+import { assertRefsInOrg } from "@/lib/refs";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-function serialize<T extends { joinDate: Date }>(e: T) {
-  return { ...e, joinDate: toIsoDate(e.joinDate) };
+function serialize<T extends { joinDate: Date; clerkUserId: string | null }>(e: T) {
+  const { clerkUserId, ...rest } = e;
+  // hasLogin: this person has joined the organization in Clerk (the id itself stays server-side).
+  return { ...rest, joinDate: toIsoDate(e.joinDate), hasLogin: clerkUserId !== null };
 }
 
 const detail = {
@@ -24,7 +27,7 @@ const detail = {
   designation: { select: { id: true, name: true } },
   location: { select: { id: true, name: true } },
   reportingManager: { select: { id: true, firstName: true, lastName: true } },
-  user: { select: { role: true } },
+  clerkUserId: true,
 } as const;
 
 export const GET = route<Ctx>(async (_req, { params }) => {
@@ -45,23 +48,19 @@ export const PATCH = route<Ctx>(async (req, { params }) => {
   if (!admin && id !== session.employeeId) throw forbidden();
 
   const body = await readJson(req);
-  const { role, reportingManagerId, joinDate, ...rest } = admin
+  const { reportingManagerId, joinDate, ...rest } = admin
     ? employeeUpdateSchema.parse(body)
-    : { ...selfUpdateSchema.parse(body), role: undefined, reportingManagerId: undefined, joinDate: undefined };
+    : { ...selfUpdateSchema.parse(body), reportingManagerId: undefined, joinDate: undefined };
 
-  const employee = await db.$transaction(async (tx) => {
-    if (role && existing.userId) {
-      await tx.user.update({ where: { id: existing.userId }, data: { role } });
-    }
-    return tx.employee.update({
-      where: { id },
-      data: {
-        ...rest,
-        ...(reportingManagerId !== undefined ? { reportingManagerId } : {}),
-        ...(joinDate ? { joinDate: new Date(`${joinDate}T00:00:00Z`) } : {}),
-      },
-      select: detail,
-    });
+  await assertRefsInOrg({ ...rest, reportingManagerId });
+  const employee = await db.employee.update({
+    where: { id },
+    data: {
+      ...rest,
+      ...(reportingManagerId !== undefined ? { reportingManagerId } : {}),
+      ...(joinDate ? { joinDate: new Date(`${joinDate}T00:00:00Z`) } : {}),
+    },
+    select: detail,
   });
   return NextResponse.json(serialize(employee));
 });

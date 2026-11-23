@@ -95,7 +95,7 @@ export function serializeLog(log: LogWithRefs) {
 }
 
 /** Serializes concurrent punches for one employee-day (e.g. a double-clicked button). */
-async function lockLog(tx: Prisma.TransactionClient, logId: string) {
+async function lockLog(tx: Pick<Prisma.TransactionClient, "$queryRaw">, logId: string) {
   await tx.$queryRaw`SELECT id FROM "AttendanceLog" WHERE id = ${logId} FOR UPDATE`;
 }
 

@@ -28,8 +28,6 @@ export default function NewEmployeePage() {
     designationId: "",
     locationId: "",
     reportingManagerId: "",
-    role: "EMPLOYEE" as "ADMIN" | "MANAGER" | "EMPLOYEE",
-    password: "",
   });
 
   useEffect(() => {
@@ -54,7 +52,6 @@ export default function NewEmployeePage() {
           designationId: form.designationId || null,
           locationId: form.locationId || null,
           reportingManagerId: form.reportingManagerId || null,
-          password: form.password || undefined,
         }),
       });
       router.replace(`/employees/${employee.id}`);
@@ -67,7 +64,7 @@ export default function NewEmployeePage() {
 
   return (
     <div>
-      <PageHeader title="Add employee" description="Create a directory profile. Add a password to also give them a login." />
+      <PageHeader title="Add employee" description="Create a directory profile. When they join your organization with this email, they are linked to it automatically." />
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
 
       <form onSubmit={onSubmit} className="max-w-3xl space-y-5">
@@ -136,16 +133,6 @@ export default function NewEmployeePage() {
               </option>
             ))}
           </Select>
-        </Field>
-        <Field label="System role">
-          <Select value={form.role} onChange={(e) => set("role", e.target.value as typeof form.role)}>
-            <option value="EMPLOYEE">Employee</option>
-            <option value="MANAGER">Manager</option>
-            <option value="ADMIN">Admin</option>
-          </Select>
-        </Field>
-        <Field label="Password (optional — creates a login)">
-          <Input type="password" value={form.password} onChange={(e) => set("password", e.target.value)} minLength={8} />
         </Field>
 
         </div>

@@ -1,45 +1,43 @@
 import { cache } from "react";
-import { auth, currentUser } from "@clerk/nextjs/server";
+import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { db } from "./db";
 import { ApiError, badRequest, forbidden, unauthorized } from "./errors";
-import type { Role, Session } from "./session";
+import { provisionEmployee } from "./provision";
+import { roleFromOrgRole, type Role, type Session } from "./session";
 
 export { ApiError, badRequest, conflict, forbidden, notFound, unauthorized } from "./errors";
 
 type Resolved =
   | { status: "signed-out" }
+  | { status: "no-org" }
   | { status: "no-employee" }
   | { status: "ok"; session: Session };
 
 /**
- * Resolves the Clerk user to a local User/Employee by verified primary email.
- * Roles and employee identity stay in our DB; Clerk only proves who the person is.
- * Memoised per request so layouts, pages and handlers share one lookup.
+ * Clerk proves who the person is and which organization is active (and their org
+ * role); our DB holds that organization's Employee record. Memoised per request.
+ * The employee lookup is DB-only after the first visit; Clerk's API is called
+ * only to provision a new member (see provisionEmployee).
  */
 const resolve = cache(async (): Promise<Resolved> => {
-  const { userId: clerkId } = await auth();
-  if (!clerkId) return { status: "signed-out" };
+  const { userId, orgId, orgRole } = await auth();
+  if (!userId) return { status: "signed-out" };
+  if (!orgId) return { status: "no-org" };
 
-  const clerkUser = await currentUser();
-  const primary = clerkUser?.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId);
-  if (!primary || primary.verification?.status !== "verified") return { status: "no-employee" };
-
-  const user = await db.user.findFirst({
-    where: { email: { equals: primary.emailAddress, mode: "insensitive" } },
-    include: { employee: true },
-  });
-  if (!user?.employee || user.employee.status !== "ACTIVE") return { status: "no-employee" };
+  const employee = (await db.employee.findFirst({ where: { clerkUserId: userId } })) ?? (await provisionEmployee(userId));
+  if (!employee || employee.status !== "ACTIVE") return { status: "no-employee" };
 
   return {
     status: "ok",
     session: {
-      userId: user.id,
-      employeeId: user.employee.id,
-      role: user.role,
-      name: `${user.employee.firstName} ${user.employee.lastName}`,
+      userId,
+      organizationId: orgId,
+      employeeId: employee.id,
+      role: roleFromOrgRole(orgRole),
+      name: `${employee.firstName} ${employee.lastName}`.trim(),
     },
   };
 });
@@ -49,10 +47,11 @@ export async function getSession(): Promise<Session | null> {
   return r.status === "ok" ? r.session : null;
 }
 
-/** For pages: redirect to /sign-in when signed out, /no-access when no matching employee. */
+/** For pages: /sign-in when signed out, /select-org with no active org, /no-access when deactivated. */
 export async function requirePageSession(): Promise<Session> {
   const r = await resolve();
   if (r.status === "signed-out") redirect("/sign-in");
+  if (r.status === "no-org") redirect("/select-org");
   if (r.status === "no-employee") redirect("/no-access");
   return r.session;
 }

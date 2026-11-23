@@ -7,12 +7,6 @@ datasource db {
   provider = "postgresql"
 }
 
-enum Role {
-  ADMIN
-  MANAGER
-  EMPLOYEE
-}
-
 enum EmployeeStatus {
   ACTIVE
   INACTIVE
@@ -46,52 +40,60 @@ enum AttendanceStatus {
   WEEKEND
 }
 
-model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  passwordHash String
-  role         Role      @default(EMPLOYEE)
-  createdAt    DateTime  @default(now())
-  employee     Employee?
-}
-
 model Department {
-  id        String     @id @default(cuid())
-  name      String     @unique
-  employees Employee[]
+  id             String     @id @default(cuid())
+  // Tenant key = Clerk organization id. Stamped and filtered by the scoped client in src/lib/db.ts.
+  organizationId String     @default("")
+  name           String
+  employees      Employee[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
 }
 
 model Designation {
-  id        String     @id @default(cuid())
-  name      String     @unique
-  employees Employee[]
+  id             String     @id @default(cuid())
+  // Tenant key = Clerk organization id. Stamped and filtered by the scoped client in src/lib/db.ts.
+  organizationId String     @default("")
+  name           String
+  employees      Employee[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
 }
 
 model Location {
-  id           String              @id @default(cuid())
-  name         String              @unique
+  id             String              @id @default(cuid())
+  // Tenant key = Clerk organization id. Stamped and filtered by the scoped client in src/lib/db.ts.
+  organizationId String              @default("")
+  name           String
   // Office geofence: a check-in within radiusMeters of this point counts as office.
   // null coordinates = not an office (e.g. "Remote").
-  latitude     Float?
-  longitude    Float?
-  radiusMeters Int                 @default(200)
-  employees    Employee[]
-  holidays     Holiday[]
-  sessions     AttendanceSession[]
+  latitude       Float?
+  longitude      Float?
+  radiusMeters   Int                 @default(200)
+  employees      Employee[]
+  holidays       Holiday[]
+  sessions       AttendanceSession[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
 }
 
 model Employee {
   id                 String         @id @default(cuid())
-  empCode            String         @unique
+  // Tenant key = Clerk organization id. Stamped and filtered by the scoped client in src/lib/db.ts.
+  organizationId     String         @default("")
+  empCode            String
   firstName          String
   lastName           String
-  email              String         @unique
+  email              String
   phone              String?
   photoUrl           String?
   joinDate           DateTime       @db.Date
   status             EmployeeStatus @default(ACTIVE)
-  userId             String?        @unique
-  user               User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  // Clerk user id once this person has joined the org; null for directory-only records.
+  clerkUserId        String?
   departmentId       String?
   department         Department?    @relation(fields: [departmentId], references: [id])
   designationId      String?
@@ -112,85 +114,108 @@ model Employee {
   remoteApprovals RemoteWorkRequest[]     @relation("RemoteApprover")
   createdAt       DateTime                @default(now())
   updatedAt       DateTime                @updatedAt
+
+  @@unique([organizationId, empCode])
+  @@unique([organizationId, email])
+  @@unique([organizationId, clerkUserId])
+  @@index([organizationId])
 }
 
 model LeaveType {
-  id           String         @id @default(cuid())
-  name         String         @unique
-  code         String         @unique
-  annualQuota  Decimal        @db.Decimal(5, 1)
-  paid         Boolean        @default(true)
-  carryForward Boolean        @default(false)
-  allowHalfDay Boolean        @default(true)
-  active       Boolean        @default(true)
-  balances     LeaveBalance[]
-  requests     LeaveRequest[]
+  id             String         @id @default(cuid())
+  // Tenant key = Clerk organization id. Stamped and filtered by the scoped client in src/lib/db.ts.
+  organizationId String         @default("")
+  name           String
+  code           String
+  annualQuota    Decimal        @db.Decimal(5, 1)
+  paid           Boolean        @default(true)
+  carryForward   Boolean        @default(false)
+  allowHalfDay   Boolean        @default(true)
+  active         Boolean        @default(true)
+  balances       LeaveBalance[]
+  requests       LeaveRequest[]
+
+  @@unique([organizationId, name])
+  @@unique([organizationId, code])
+  @@index([organizationId])
 }
 
 model LeaveBalance {
-  id          String    @id @default(cuid())
-  employeeId  String
-  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  leaveTypeId String
-  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
-  year        Int
-  granted     Decimal   @db.Decimal(5, 1)
-  used        Decimal   @default(0) @db.Decimal(5, 1)
+  id             String    @id @default(cuid())
+  // Tenant key = Clerk organization id. Stamped and filtered by the scoped client in src/lib/db.ts.
+  organizationId String    @default("")
+  employeeId     String
+  employee       Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveTypeId    String
+  leaveType      LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+  year           Int
+  granted        Decimal   @db.Decimal(5, 1)
+  used           Decimal   @default(0) @db.Decimal(5, 1)
 
   @@unique([employeeId, leaveTypeId, year])
+  @@index([organizationId])
 }
 
 model LeaveRequest {
-  id           String        @id @default(cuid())
-  employeeId   String
-  employee     Employee      @relation("Applicant", fields: [employeeId], references: [id], onDelete: Cascade)
-  leaveTypeId  String
-  leaveType    LeaveType     @relation(fields: [leaveTypeId], references: [id])
-  fromDate     DateTime      @db.Date
-  toDate       DateTime      @db.Date
-  dayPart      DayPart       @default(FULL)
-  days         Decimal       @db.Decimal(5, 1)
-  reason       String
-  status       RequestStatus @default(PENDING)
-  approverId   String?
-  approver     Employee?     @relation("Approver", fields: [approverId], references: [id], onDelete: SetNull)
-  decisionNote String?
-  decidedAt    DateTime?
-  createdAt    DateTime      @default(now())
+  id             String        @id @default(cuid())
+  // Tenant key = Clerk organization id. Stamped and filtered by the scoped client in src/lib/db.ts.
+  organizationId String        @default("")
+  employeeId     String
+  employee       Employee      @relation("Applicant", fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveTypeId    String
+  leaveType      LeaveType     @relation(fields: [leaveTypeId], references: [id])
+  fromDate       DateTime      @db.Date
+  toDate         DateTime      @db.Date
+  dayPart        DayPart       @default(FULL)
+  days           Decimal       @db.Decimal(5, 1)
+  reason         String
+  status         RequestStatus @default(PENDING)
+  approverId     String?
+  approver       Employee?     @relation("Approver", fields: [approverId], references: [id], onDelete: SetNull)
+  decisionNote   String?
+  decidedAt      DateTime?
+  createdAt      DateTime      @default(now())
 
   @@index([employeeId, fromDate])
   @@index([status])
+  @@index([organizationId])
 }
 
 model Holiday {
-  id         String    @id @default(cuid())
-  date       DateTime  @db.Date
-  name       String
+  id             String    @id @default(cuid())
+  // Tenant key = Clerk organization id. Stamped and filtered by the scoped client in src/lib/db.ts.
+  organizationId String    @default("")
+  date           DateTime  @db.Date
+  name           String
   // null = applies to all locations
-  locationId String?
-  location   Location? @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  locationId     String?
+  location       Location? @relation(fields: [locationId], references: [id], onDelete: Cascade)
 
   @@index([date])
+  @@index([organizationId])
 }
 
 model AttendanceLog {
-  id            String              @id @default(cuid())
-  employeeId    String
-  employee      Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  date          DateTime            @db.Date
+  id             String              @id @default(cuid())
+  // Tenant key = Clerk organization id. Stamped and filtered by the scoped client in src/lib/db.ts.
+  organizationId String              @default("")
+  employeeId     String
+  employee       Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date           DateTime            @db.Date
   // First check-in and last check-out of the day; checkOut is null while a session is open.
-  checkIn       DateTime?
-  checkOut      DateTime?
+  checkIn        DateTime?
+  checkOut       DateTime?
   // total of the day's closed sessions
-  workedMinutes Int                 @default(0)
-  status        AttendanceStatus    @default(PRESENT)
-  regularized   Boolean             @default(false)
+  workedMinutes  Int                 @default(0)
+  status         AttendanceStatus    @default(PRESENT)
+  regularized    Boolean             @default(false)
   // Summary of the sessions' modes; null for logs created before geofencing, or by regularization
-  workMode      WorkMode?
-  sessions      AttendanceSession[]
-  remoteRequest RemoteWorkRequest?
+  workMode       WorkMode?
+  sessions       AttendanceSession[]
+  remoteRequest  RemoteWorkRequest?
 
   @@unique([employeeId, date])
+  @@index([organizationId])
 }
 
 /**
@@ -198,6 +223,8 @@ model AttendanceLog {
  */
 model AttendanceSession {
   id                String        @id @default(cuid())
+  // Tenant key = Clerk organization id. Stamped and filtered by the scoped client in src/lib/db.ts.
+  organizationId    String        @default("")
   attendanceLogId   String
   attendanceLog     AttendanceLog @relation(fields: [attendanceLogId], references: [id], onDelete: Cascade)
   checkIn           DateTime
@@ -215,24 +242,28 @@ model AttendanceSession {
   checkOutAccuracy  Float?
 
   @@index([attendanceLogId])
+  @@index([organizationId])
 }
 
 model RegularizationRequest {
-  id           String        @id @default(cuid())
-  employeeId   String
-  employee     Employee      @relation("RegApplicant", fields: [employeeId], references: [id], onDelete: Cascade)
-  date         DateTime      @db.Date
-  checkIn      DateTime
-  checkOut     DateTime
-  reason       String
-  status       RequestStatus @default(PENDING)
-  approverId   String?
-  approver     Employee?     @relation("RegApprover", fields: [approverId], references: [id], onDelete: SetNull)
-  decisionNote String?
-  decidedAt    DateTime?
-  createdAt    DateTime      @default(now())
+  id             String        @id @default(cuid())
+  // Tenant key = Clerk organization id. Stamped and filtered by the scoped client in src/lib/db.ts.
+  organizationId String        @default("")
+  employeeId     String
+  employee       Employee      @relation("RegApplicant", fields: [employeeId], references: [id], onDelete: Cascade)
+  date           DateTime      @db.Date
+  checkIn        DateTime
+  checkOut       DateTime
+  reason         String
+  status         RequestStatus @default(PENDING)
+  approverId     String?
+  approver       Employee?     @relation("RegApprover", fields: [approverId], references: [id], onDelete: SetNull)
+  decisionNote   String?
+  decidedAt      DateTime?
+  createdAt      DateTime      @default(now())
 
   @@index([status])
+  @@index([organizationId])
 }
 
 /**
@@ -240,6 +271,8 @@ model RegularizationRequest {
  */
 model RemoteWorkRequest {
   id              String        @id @default(cuid())
+  // Tenant key = Clerk organization id. Stamped and filtered by the scoped client in src/lib/db.ts.
+  organizationId  String        @default("")
   employeeId      String
   employee        Employee      @relation("RemoteApplicant", fields: [employeeId], references: [id], onDelete: Cascade)
   attendanceLogId String        @unique
@@ -258,4 +291,5 @@ model RemoteWorkRequest {
   createdAt       DateTime      @default(now())
 
   @@index([status])
+  @@index([organizationId])
 }

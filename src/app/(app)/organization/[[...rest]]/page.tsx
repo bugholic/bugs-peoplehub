@@ -1,0 +1,18 @@
+import { Suspense } from "react";
+import { OrganizationProfile } from "@clerk/nextjs";
+import { redirect } from "next/navigation";
+import { requirePageSession } from "@/lib/authz";
+import { PageHeader } from "@/components/ui";
+
+export default async function OrganizationPage() {
+  const session = await requirePageSession();
+  if (session.role !== "ADMIN") redirect("/dashboard");
+  return (
+    <>
+      <PageHeader title="Organization" description="Invite people, manage members and their roles." />
+      <Suspense>
+        <OrganizationProfile routing="path" path="/organization" />
+      </Suspense>
+    </>
+  );
+}

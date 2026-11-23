@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
 import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
-import { requireSession, route, readJson, badRequest, isAdmin } from "@/lib/authz";
+import { requireSession, route, readJson, isAdmin } from "@/lib/authz";
+import { assertRefsInOrg } from "@/lib/refs";
 import { employeeCreateSchema, employeeListQuery, parseQuery } from "@/lib/validators";
 import { toIsoDate } from "@/lib/dates";
 
@@ -65,31 +65,24 @@ export const POST = route(async (req) => {
   await requireSession("ADMIN");
   const body = employeeCreateSchema.parse(await readJson(req));
 
-  const employee = await db.$transaction(async (tx) => {
-    let userId: string | undefined;
-    if (body.password) {
-      const existing = await tx.user.findUnique({ where: { email: body.email } });
-      if (existing) throw badRequest("A user with this email already exists", "EMAIL_TAKEN");
-      const passwordHash = await bcrypt.hash(body.password, 10);
-      const user = await tx.user.create({ data: { email: body.email, passwordHash, role: body.role } });
-      userId = user.id;
-    }
-    return tx.employee.create({
-      data: {
-        empCode: body.empCode,
-        firstName: body.firstName,
-        lastName: body.lastName,
-        email: body.email,
-        phone: body.phone,
-        joinDate: new Date(`${body.joinDate}T00:00:00Z`),
-        departmentId: body.departmentId,
-        designationId: body.designationId,
-        locationId: body.locationId,
-        reportingManagerId: body.reportingManagerId,
-        userId,
-      },
-      select: summary,
-    });
+  await assertRefsInOrg(body);
+
+  // A directory record with no login yet: the person is linked to it by verified email
+  // when they join the organization (see provisionEmployee). Invite them from Organization -> Members.
+  const employee = await db.employee.create({
+    data: {
+      empCode: body.empCode,
+      firstName: body.firstName,
+      lastName: body.lastName,
+      email: body.email,
+      phone: body.phone,
+      joinDate: new Date(`${body.joinDate}T00:00:00Z`),
+      departmentId: body.departmentId,
+      designationId: body.designationId,
+      locationId: body.locationId,
+      reportingManagerId: body.reportingManagerId,
+    },
+    select: summary,
   });
 
   return NextResponse.json(serialize(employee), { status: 201 });

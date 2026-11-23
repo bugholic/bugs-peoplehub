@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useClerk } from "@clerk/nextjs";
+import { OrganizationSwitcher, useClerk } from "@clerk/nextjs";
 import type { Session } from "@/lib/session";
 import { Avatar, cx } from "@/components/ui";
-import { ClockIcon, HomeIcon, LogOutIcon, OrgIcon, PlaneIcon, UsersIcon } from "@/components/icons";
+import { BriefcaseIcon, ClockIcon, HomeIcon, LogOutIcon, OrgIcon, PlaneIcon, UsersIcon } from "@/components/icons";
 
 const LINKS = [
   { href: "/dashboard", label: "Dashboard", icon: HomeIcon },
@@ -13,6 +13,12 @@ const LINKS = [
   { href: "/org-chart", label: "Org chart", icon: OrgIcon },
   { href: "/leave", label: "Leave", icon: PlaneIcon },
   { href: "/attendance", label: "Attendance", icon: ClockIcon },
+];
+
+// Organization management is admin-only (pages and APIs enforce it too; this just hides the links).
+const ADMIN_LINKS = [
+  { href: "/settings", label: "Structure", icon: BriefcaseIcon },
+  { href: "/organization", label: "Organization", icon: UsersIcon },
 ];
 
 const ROLE_LABEL = { ADMIN: "Admin", MANAGER: "Manager", EMPLOYEE: "Employee" } as const;
@@ -35,6 +41,7 @@ export function NavSidebar({ session }: { session: Session }) {
 
   const logout = () => signOut({ redirectUrl: "/sign-in" });
 
+  const links = session.role === "ADMIN" ? [...LINKS, ...ADMIN_LINKS] : LINKS;
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
 
   return (
@@ -42,8 +49,11 @@ export function NavSidebar({ session }: { session: Session }) {
       {/* Desktop rail */}
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col bg-night px-4 py-6 text-white lg:flex">
         <Logo className="px-2" />
-        <nav className="mt-10 flex flex-1 flex-col gap-1">
-          {LINKS.map(({ href, label, icon: Icon }) => {
+        <div className="mt-6 rounded-xl bg-surface p-1 text-ink">
+          <OrganizationSwitcher hidePersonal afterSelectOrganizationUrl="/dashboard" afterCreateOrganizationUrl="/dashboard" />
+        </div>
+        <nav className="mt-6 flex flex-1 flex-col gap-1">
+          {links.map(({ href, label, icon: Icon }) => {
             const active = isActive(href);
             return (
               <Link
@@ -92,7 +102,7 @@ export function NavSidebar({ session }: { session: Session }) {
           </div>
         </div>
         <nav className="flex gap-1 overflow-x-auto px-3 pb-3">
-          {LINKS.map(({ href, label, icon: Icon }) => {
+          {links.map(({ href, label, icon: Icon }) => {
             const active = isActive(href);
             return (
               <Link
