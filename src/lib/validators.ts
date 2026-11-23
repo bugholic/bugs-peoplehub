@@ -129,3 +129,8 @@ export function parseQuery<T extends z.ZodType>(schema: T, req: Request): z.infe
 }
 
 export const nameSchema = z.object({ name: z.string().trim().min(1).max(80) });
+
+export const addMemberSchema = z.object({
+  email: z.email(),
+  role: z.enum(["ADMIN", "MANAGER", "EMPLOYEE"]).default("EMPLOYEE"),
+});
