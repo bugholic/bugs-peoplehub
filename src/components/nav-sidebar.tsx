@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
+import { useClerk } from "@clerk/nextjs";
 import type { Session } from "@/lib/session";
-import { apiFetch } from "@/lib/api-client";
 import { Avatar, cx } from "@/components/ui";
 import { ClockIcon, HomeIcon, LogOutIcon, OrgIcon, PlaneIcon, UsersIcon } from "@/components/icons";
 
@@ -31,13 +31,9 @@ export function Logo({ className }: { className?: string }) {
 
 export function NavSidebar({ session }: { session: Session }) {
   const pathname = usePathname();
-  const router = useRouter();
+  const { signOut } = useClerk();
 
-  async function logout() {
-    await apiFetch("/api/auth/logout", { method: "POST" });
-    router.replace("/login");
-    router.refresh();
-  }
+  const logout = () => signOut({ redirectUrl: "/sign-in" });
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
 
