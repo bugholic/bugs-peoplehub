@@ -18,7 +18,6 @@ export default function NewEmployeePage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
-    empCode: "",
     firstName: "",
     lastName: "",
     email: "",
@@ -71,9 +70,6 @@ export default function NewEmployeePage() {
         <Card>
         <CardTitle>Personal details</CardTitle>
         <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Employee code">
-          <Input required value={form.empCode} onChange={(e) => set("empCode", e.target.value)} />
-        </Field>
         <Field label="Email">
           <Input type="email" required value={form.email} onChange={(e) => set("email", e.target.value)} />
         </Field>

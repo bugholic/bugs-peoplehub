@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
+import { formatEmpCode, orgPrefix } from "../src/lib/emp-code";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 const db = new PrismaClient({ adapter });
@@ -8,12 +9,16 @@ const db = new PrismaClient({ adapter });
 /**
  * Demo data for ONE organization. Usage:
  *   SEED_ORG_ID=org_xxx [SEED_ADMIN_EMAIL=you@company.com] npm run db:seed
+ * Employee codes use the first two letters of SEED_ORG_NAME (default "PeopleHub" -> PE001...).
  * (org id is shown in the Clerk Dashboard -> Organizations). Only that org's rows are replaced.
  * Employees have no login; each person is linked automatically when they join the org
  * with a matching verified email, so set SEED_ADMIN_EMAIL to your own address.
  */
-const ORG = process.env.SEED_ORG_ID;
-if (!ORG) throw new Error("Set SEED_ORG_ID to the Clerk organization id to seed");
+const SEED_ORG_ID = process.env.SEED_ORG_ID;
+if (!SEED_ORG_ID) throw new Error("Set SEED_ORG_ID to the Clerk organization id to seed");
+const ORG: string = SEED_ORG_ID;
+const ORG_NAME = process.env.SEED_ORG_NAME ?? "PeopleHub";
+const PREFIX = orgPrefix(ORG_NAME);
 const ADMIN_EMAIL = (process.env.SEED_ADMIN_EMAIL ?? "admin@peoplehub.test").toLowerCase();
 
 const DEPARTMENTS = ["Engineering", "Sales", "Marketing", "Human Resources", "Finance"];
@@ -114,7 +119,7 @@ async function main() {
 
   const plans: Plan[] = [];
   plans.push({
-    empCode: "EMP001",
+    empCode: formatEmpCode(PREFIX, 1),
     first: "Asha",
     last: "Admin",
     email: ADMIN_EMAIL,
@@ -137,7 +142,7 @@ async function main() {
   managerDepts.forEach((dept, i) => {
     const { first, last } = nameAt(i);
     plans.push({
-      empCode: `EMP00${i + 2}`,
+      empCode: formatEmpCode(PREFIX, i + 2),
       first,
       last,
       email: `${first.toLowerCase()}.${last.toLowerCase()}@peoplehub.test`,
@@ -145,12 +150,12 @@ async function main() {
       designation: managerDesig[dept],
       location: LOCATIONS[i % LOCATIONS.length],
       role: "MANAGER",
-      managerCode: "EMP001",
+      managerCode: formatEmpCode(PREFIX, 1),
       withLogin: dept === "Engineering",
     });
   });
 
-  const deptCodes = plans.filter((p) => p.managerCode === "EMP001").reduce<Record<string, string>>((acc, p) => {
+  const deptCodes = plans.filter((p) => p.managerCode === formatEmpCode(PREFIX, 1)).reduce<Record<string, string>>((acc, p) => {
     acc[p.department] = p.empCode;
     return acc;
   }, {});
@@ -170,7 +175,7 @@ async function main() {
     const options = icDesig[dept];
     const designation = options[codeN % options.length];
     const { first, last } = nameAt(codeN);
-    const empCode = `EMP${String(codeN).padStart(3, "0")}`;
+    const empCode = formatEmpCode(PREFIX, codeN);
     const withLogin = !firstEmployeeDone && dept === "Engineering";
     if (withLogin) firstEmployeeDone = true;
     plans.push({
@@ -187,6 +192,13 @@ async function main() {
     });
     codeN++;
   }
+
+  // Org registry row: fixes the code prefix; the counter continues after the seeded employees.
+  await db.organization.upsert({
+    where: { id: ORG },
+    create: { id: ORG, name: ORG_NAME, empPrefix: PREFIX, empSerial: plans.length },
+    update: { name: ORG_NAME, empPrefix: PREFIX, empSerial: plans.length },
+  });
 
   console.log(`Seeding ${plans.length} employees...`);
   const idByCode: Record<string, string> = {};

@@ -293,3 +293,16 @@ model RemoteWorkRequest {
   @@index([status])
   @@index([organizationId])
 }
+
+/**
+ * One row per Clerk organization that has used the app. Holds the employee-code prefix
+ * (fixed when first created, so renaming the org never changes existing codes) and the
+ * atomic serial counter. Not tenant-scoped: `id` is the Clerk org id.
+ */
+model Organization {
+  id        String   @id
+  name      String
+  empPrefix String
+  empSerial Int      @default(0)
+  createdAt DateTime @default(now())
+}

@@ -40,7 +40,9 @@ export const db = dbUnscoped.$extends({
   name: "tenant-scope",
   query: {
     $allModels: {
-      async $allOperations({ operation, args, query }) {
+      async $allOperations({ model, operation, args, query }) {
+        // The Organization registry is keyed by the Clerk org id itself, not tenant-owned rows.
+        if (model === "Organization") throw new ApiError(500, "UNSCOPED_QUERY", "Use dbUnscoped for Organization");
         const organizationId = await activeOrgId();
         const a = (args ?? {}) as Json;
 

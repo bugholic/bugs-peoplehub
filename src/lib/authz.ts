@@ -27,7 +27,7 @@ const resolve = cache(async (): Promise<Resolved> => {
   if (!userId) return { status: "signed-out" };
   if (!orgId) return { status: "no-org" };
 
-  const employee = (await db.employee.findFirst({ where: { clerkUserId: userId } })) ?? (await provisionEmployee(userId));
+  const employee = (await db.employee.findFirst({ where: { clerkUserId: userId } })) ?? (await provisionEmployee(userId, orgId));
   if (!employee || employee.status !== "ACTIVE") return { status: "no-employee" };
 
   return {

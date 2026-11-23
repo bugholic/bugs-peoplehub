@@ -3,6 +3,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import { requireSession, route, readJson, isAdmin } from "@/lib/authz";
 import { assertRefsInOrg } from "@/lib/refs";
+import { nextEmpCode } from "@/lib/org";
 import { employeeCreateSchema, employeeListQuery, parseQuery } from "@/lib/validators";
 import { toIsoDate } from "@/lib/dates";
 
@@ -62,7 +63,7 @@ export const GET = route(async (req) => {
 });
 
 export const POST = route(async (req) => {
-  await requireSession("ADMIN");
+  const session = await requireSession("ADMIN");
   const body = employeeCreateSchema.parse(await readJson(req));
 
   await assertRefsInOrg(body);
@@ -71,7 +72,7 @@ export const POST = route(async (req) => {
   // when they join the organization (see provisionEmployee). Invite them from Organization -> Members.
   const employee = await db.employee.create({
     data: {
-      empCode: body.empCode,
+      empCode: await nextEmpCode(session.organizationId),
       firstName: body.firstName,
       lastName: body.lastName,
       email: body.email,
