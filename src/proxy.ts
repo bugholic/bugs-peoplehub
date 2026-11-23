@@ -1,12 +1,13 @@
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { clerkMiddleware } from "@clerk/nextjs/server";
 
-const isPublic = createRouteMatcher(["/sign-in(.*)", "/sign-up(.*)", "/no-access"]);
-const isApi = createRouteMatcher(["/api(.*)"]);
-
-export default clerkMiddleware(async (auth, req) => {
-  // API routes answer 401 themselves (requireSession -> JSON error); pages redirect to sign-in.
-  if (!isPublic(req) && !isApi(req)) await auth.protect();
-});
+/**
+ * Makes Clerk's auth() available to pages and route handlers. Authorization is NOT decided
+ * here by URL pattern; each resource checks for itself (resource-based auth):
+ *   - pages: requirePageSession() in (app)/layout.tsx and the admin pages
+ *   - API routes: requireSession() (JSON 401/403)
+ *   - data: the tenant-scoped db client (src/lib/db.ts) refuses to run without an active org
+ */
+export default clerkMiddleware();
 
 export const config = {
   matcher: [

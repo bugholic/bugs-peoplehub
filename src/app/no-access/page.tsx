@@ -1,8 +1,11 @@
+import { redirect } from "next/navigation";
 import { SignOutButton } from "@clerk/nextjs";
+import { auth } from "@clerk/nextjs/server";
 import { AuthShell } from "@/app/auth-shell";
 import { Button } from "@/components/ui";
 
-export default function NoAccessPage() {
+export default async function NoAccessPage() {
+  if (!(await auth()).userId) redirect("/sign-in");
   return (
     <AuthShell>
       <div className="w-full max-w-sm text-center">

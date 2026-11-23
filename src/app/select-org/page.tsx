@@ -1,8 +1,11 @@
 import { Suspense } from "react";
+import { redirect } from "next/navigation";
 import { OrganizationList } from "@clerk/nextjs";
+import { auth } from "@clerk/nextjs/server";
 import { AuthShell } from "@/app/auth-shell";
 
-export default function SelectOrgPage() {
+export default async function SelectOrgPage() {
+  if (!(await auth()).userId) redirect("/sign-in");
   return (
     <AuthShell>
       <Suspense>
