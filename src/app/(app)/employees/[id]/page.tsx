@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useParams } from "next/navigation";
 import { apiFetch, errorMessage } from "@/lib/api-client";
 import { Alert, Avatar, Badge, Button, Card, CardTitle, Field, Input, Spinner } from "@/components/ui";
@@ -16,6 +16,7 @@ type Employee = {
   lastName: string;
   email: string;
   phone: string | null;
+  photoUrl: string | null;
   joinDate: string;
   status: "ACTIVE" | "INACTIVE";
   department: Lookup | null;
@@ -60,6 +61,45 @@ export default function EmployeeDetailPage() {
 
   const isAdmin = me?.role === "ADMIN";
   const isSelf = me?.employeeId === id;
+
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function uploadPhoto(file: File | undefined) {
+    if (!file) return;
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      // Plain fetch: apiFetch forces a JSON Content-Type, which breaks the multipart boundary.
+      const res = await fetch(`/api/employees/${id}/photo`, { method: "PUT", body });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(json?.error?.message ?? `Upload failed (${res.status})`);
+      setEmployee((e) => (e ? { ...e, photoUrl: json.photoUrl } : e));
+      setSuccess("Photo updated.");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSaving(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  async function removePhoto() {
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await apiFetch(`/api/employees/${id}/photo`, { method: "DELETE" });
+      setEmployee((e) => (e ? { ...e, photoUrl: null } : e));
+      setSuccess("Photo removed.");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function savePhone() {
     setSaving(true);
@@ -109,7 +149,7 @@ export default function EmployeeDetailPage() {
         </div>
         <div className="flex flex-wrap items-end justify-between gap-4 px-6 pb-6">
           <div className="-mt-10 flex items-end gap-4">
-            <Avatar name={fullName} size="xl" className="ring-4 ring-surface" />
+            <Avatar name={fullName} size="xl" className="ring-4 ring-surface" photoUrl={employee.photoUrl} />
             <div className="pb-1">
               <h1 className="font-display text-2xl font-semibold tracking-tight text-ink sm:text-3xl">{fullName}</h1>
               <p className="text-ink-2">
@@ -119,6 +159,19 @@ export default function EmployeeDetailPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {(isAdmin || isSelf) && (
+              <>
+                <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={(e) => uploadPhoto(e.target.files?.[0])} />
+                <Button variant="secondary" size="sm" disabled={saving} onClick={() => fileRef.current?.click()}>
+                  {employee.photoUrl ? "Change photo" : "Add photo"}
+                </Button>
+                {employee.photoUrl && (
+                  <Button variant="secondary" size="sm" disabled={saving} onClick={removePhoto}>
+                    Remove
+                  </Button>
+                )}
+              </>
+            )}
             <Badge status={employee.status} />
             {isAdmin && employee.status === "ACTIVE" && (
               <Button variant="secondary" size="sm" disabled={saving} onClick={deactivate} className="text-rose-600 dark:text-rose-400">

@@ -121,7 +121,7 @@ const AVATAR_TONES = [
   "bg-teal-100 text-teal-800 dark:bg-teal-400/15 dark:text-teal-300",
 ];
 
-export function Avatar({ name, size = "md", className }: { name: string; size?: "sm" | "md" | "lg" | "xl"; className?: string }) {
+export function Avatar({ name, size = "md", className, photoUrl }: { name: string; size?: "sm" | "md" | "lg" | "xl"; className?: string; photoUrl?: string | null }) {
   const parts = name.trim().split(/\s+/);
   const initials = ((parts[0]?.[0] ?? "") + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
   let hash = 0;
@@ -129,8 +129,14 @@ export function Avatar({ name, size = "md", className }: { name: string; size?: 
   const tone = AVATAR_TONES[Math.abs(hash) % AVATAR_TONES.length];
   const sizes = { sm: "size-8 text-xs", md: "size-10 text-sm", lg: "size-12 text-base", xl: "size-20 text-2xl" };
   return (
-    <span className={cx("inline-flex shrink-0 items-center justify-center rounded-full font-display font-semibold", tone, sizes[size], className)}>
-      {initials}
+    <span className={cx("inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full font-display font-semibold", tone, sizes[size], className)}>
+      {photoUrl ? (
+        // Served by our auth-checked API route (private bucket), so next/image's optimizer can't fetch it.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={photoUrl} alt={name} className="size-full object-cover" />
+      ) : (
+        initials
+      )}
     </span>
   );
 }

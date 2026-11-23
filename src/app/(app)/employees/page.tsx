@@ -12,6 +12,7 @@ type Employee = {
   firstName: string;
   lastName: string;
   email: string;
+  photoUrl: string | null;
   status: "ACTIVE" | "INACTIVE";
   department: { name: string } | null;
   designation: { name: string } | null;
@@ -78,7 +79,7 @@ export default function EmployeesPage() {
             <tr key={e.id} className="group transition-colors hover:bg-surface-2">
               <td className="px-5 py-3.5">
                 <Link href={`/employees/${e.id}`} className="flex items-center gap-3">
-                  <Avatar name={`${e.firstName} ${e.lastName}`} size="sm" />
+                  <Avatar name={`${e.firstName} ${e.lastName}`} size="sm" photoUrl={e.photoUrl} />
                   <span className="min-w-0">
                     <span className="block font-semibold text-ink group-hover:text-brand-ink">
                       {e.firstName} {e.lastName}

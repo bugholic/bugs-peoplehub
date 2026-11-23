@@ -6,7 +6,7 @@ import { apiFetch, errorMessage } from "@/lib/api-client";
 import { Alert, Avatar, Card, PageHeader, Spinner, cx } from "@/components/ui";
 import { ChevronLeftIcon } from "@/components/icons";
 
-type Node = { id: string; name: string; title: string | null; managerId: string | null };
+type Node = { id: string; name: string; title: string | null; photoUrl: string | null; managerId: string | null };
 type Tree = Node & { children: Tree[] };
 
 function buildTree(nodes: Node[]): Tree[] {
@@ -39,7 +39,7 @@ function Branch({ node, depth }: { node: Tree; depth: number }) {
           depth === 0 ? "border-brand/30" : "border-line",
         )}
       >
-        <Avatar name={node.name} size={depth === 0 ? "lg" : "md"} />
+        <Avatar name={node.name} size={depth === 0 ? "lg" : "md"} photoUrl={node.photoUrl} />
         <Link href={`/employees/${node.id}`} className="min-w-0 flex-1">
           <span className="block truncate font-semibold text-ink hover:text-brand-ink">{node.name}</span>
           <span className="block truncate text-[13px] text-ink-3">{node.title ?? "No designation"}</span>
