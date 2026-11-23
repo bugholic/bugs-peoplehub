@@ -5,7 +5,10 @@ import { AuthShell } from "@/app/auth-shell";
 import { Button } from "@/components/ui";
 
 export default async function NoAccessPage() {
-  if (!(await auth()).userId) redirect("/sign-in");
+  // A session with the "choose organization" task still pending counts as signed OUT for auth()
+  // by default. This page is where that task is completed, so it must see that user; otherwise
+  // /select-org -> /sign-in -> (Clerk sends the pending session back) -> /select-org loops.
+  if (!(await auth({ treatPendingAsSignedOut: false })).userId) redirect("/sign-in");
   return (
     <AuthShell>
       <div className="w-full max-w-sm text-center">

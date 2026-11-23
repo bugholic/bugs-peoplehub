@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { zonedTimeToUtc, todayIso, isWeekend, parseIsoDate, monthRange, toIsoDate } from "@/lib/dates";
+import { zonedTimeToUtc, todayIso, isWeekend, parseIsoDate, monthRange, toIsoDate, formatDuration } from "@/lib/dates";
 
 describe("zonedTimeToUtc", () => {
   it("converts IST wall-clock time to the correct UTC instant", () => {
@@ -41,5 +41,18 @@ describe("monthRange", () => {
   it("handles a leap-year February", () => {
     const { end } = monthRange("2028-02");
     expect(toIsoDate(end)).toBe("2028-02-29");
+  });
+});
+
+describe("formatDuration", () => {
+  it("shows hours, minutes and seconds, zero-padded", () => {
+    expect(formatDuration(0)).toBe("0h 00m 00s");
+    expect(formatDuration(59)).toBe("0h 00m 59s");
+    expect(formatDuration(3600 + 5 * 60 + 9)).toBe("1h 05m 09s");
+    expect(formatDuration(10 * 3600 + 59 * 60 + 59)).toBe("10h 59m 59s");
+  });
+  it("floors fractions and clamps negatives", () => {
+    expect(formatDuration(61.9)).toBe("0h 01m 01s");
+    expect(formatDuration(-5)).toBe("0h 00m 00s");
   });
 });

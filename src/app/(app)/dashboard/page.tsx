@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiFetch, errorMessage } from "@/lib/api-client";
 import { Alert, Avatar, Button, Card, CardTitle, PageHeader, Spinner } from "@/components/ui";
 import { CheckIcon, LogInIcon, LogOutIcon, PinIcon, XIcon } from "@/components/icons";
-import { APP_TZ, formatDate, formatMinutes, formatTime, parseIsoDate, todayIso } from "@/lib/dates";
+import { APP_TZ, formatDate, formatDuration, formatMinutes, formatTime, parseIsoDate, todayIso } from "@/lib/dates";
 import { punch as punchWithLocation, punchMessage, WORK_MODE_LABEL, type PunchAction, type PunchLog } from "@/lib/punch";
 
 type Me = { session: { name: string; role: "ADMIN" | "MANAGER" | "EMPLOYEE" }; employee: { id: string } };
@@ -265,18 +265,19 @@ function TodayCard({
   notice: string | null;
   onPunch: (a: PunchAction) => void;
 }) {
+  const onTheClock = !!today?.openSince;
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 15_000);
+    // Tick every second only while a session is open (the timer shows seconds); otherwise nothing moves.
+    const t = setInterval(() => setNow(new Date()), onTheClock ? 1_000 : 15_000);
     return () => clearInterval(t);
-  }, []);
+  }, [onTheClock]);
 
-  const onTheClock = !!today?.openSince;
   const checkedOut = !onTheClock && !!today?.checkOut;
   // Closed sessions plus the open one, counted live so the ring moves.
-  const openMinutes = onTheClock ? Math.max(0, Math.floor((now.getTime() - new Date(today!.openSince!).getTime()) / 60000)) : 0;
-  const worked = (today?.workedMinutes ?? 0) + openMinutes;
-  const pct = Math.min(1, worked / WORKDAY_MINUTES);
+  const openSeconds = onTheClock ? Math.max(0, Math.floor((now.getTime() - new Date(today!.openSince!).getTime()) / 1000)) : 0;
+  const workedSeconds = (today?.workedMinutes ?? 0) * 60 + openSeconds;
+  const pct = Math.min(1, workedSeconds / (WORKDAY_MINUTES * 60));
   const R = 52;
   const C = 2 * Math.PI * R;
   const sessionCount = today?.sessions.length ?? 0;
@@ -358,7 +359,7 @@ function TodayCard({
             />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="font-display text-2xl font-semibold tabular-nums">{formatMinutes(worked)}</span>
+            <span className="font-display text-lg font-semibold tabular-nums">{formatDuration(workedSeconds)}</span>
             <span className="text-xs text-white/50">of {WORKDAY_MINUTES / 60}h today</span>
           </div>
         </div>

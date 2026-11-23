@@ -92,6 +92,15 @@ export function formatMinutes(min: number): string {
   return `${h}h ${String(m).padStart(2, "0")}m`;
 }
 
+/** Whole seconds -> "2h 05m 09s" (live timers). Negative input is clamped to zero. */
+export function formatDuration(totalSeconds: number): string {
+  const t = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const s = t % 60;
+  return `${h}h ${String(m).padStart(2, "0")}m ${String(s).padStart(2, "0")}s`;
+}
+
 /** "2026-10" -> first and last date of that month (UTC midnight). */
 export function monthRange(ym: string): { start: Date; end: Date } {
   if (!/^\d{4}-\d{2}$/.test(ym)) throw new Error(`Invalid month: ${ym}`);
