@@ -14,5 +14,8 @@ export const config = {
     // Skip Next internals and static files, always run for API routes.
     "/((?!_next|[^?]*\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
     "/(api|trpc)(.*)",
+    // Clerk Frontend API auto-proxy on production *.vercel.app hosts (pk_live_ keys only).
+    // Needed explicitly: the first pattern skips .js files, and clerk-js loads through /__clerk/npm/...js.
+    "/__clerk/:path*",
   ],
 };
