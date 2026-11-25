@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { forbidden, requireSession, route, notFound } from "@/lib/authz";
+import { forbidden, requirePermission, route, notFound } from "@/lib/authz";
 import { decisionSchema } from "@/lib/validators";
 import { decideRemoteRequest, remoteRequestInclude, serializeRemoteRequest } from "@/lib/attendance";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export const POST = route<Ctx>(async (req, { params }) => {
-  const session = await requireSession("ADMIN");
+  const session = await requirePermission("attendance.remote_approve");
   const { id } = await params;
   const { note } = decisionSchema.parse(await req.json().catch(() => ({})));
   const existing = await db.remoteWorkRequest.findUnique({ where: { id } });

@@ -88,3 +88,55 @@ input[type="month"] {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Org chart: top-down tree. Each <li> draws the elbow connecting it to its siblings'
+   horizontal rail (::before = left half, ::after = right half + drop into the card);
+   each nested <ul> draws the stem down from its parent card. */
+.org-tree {
+  --org-gap: 28px;
+  --org-line: color-mix(in srgb, var(--ink-3) 55%, transparent);
+}
+.org-tree ul {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  padding-top: var(--org-gap);
+}
+.org-tree li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--org-gap) 10px 0;
+}
+.org-tree li::before,
+.org-tree li::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: var(--org-gap);
+  border-top: 1.5px solid var(--org-line);
+}
+.org-tree li::before { right: 50%; }
+.org-tree li::after { left: 50%; border-left: 1.5px solid var(--org-line); }
+.org-tree li:first-child::before,
+.org-tree li:last-child::after { border: 0; }
+.org-tree li:last-child::before { border-right: 1.5px solid var(--org-line); border-top-right-radius: 10px; }
+.org-tree li:first-child::after { border-top-left-radius: 10px; }
+/* Only child: no rail, just the stem continuing straight down (keeps level spacing even). */
+.org-tree li:only-child::before { display: none; }
+.org-tree li:only-child::after { border-top: 0; border-left: 1.5px solid var(--org-line); border-radius: 0; }
+.org-tree ul ul::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: var(--org-gap);
+  border-left: 1.5px solid var(--org-line);
+}
+/* Top level: separate trees side by side, no rail above them. */
+.org-tree > ul { padding-top: 0; gap: 24px; }
+.org-tree > ul > li { padding-top: 0; }
+.org-tree > ul > li::before,
+.org-tree > ul > li::after { display: none; }

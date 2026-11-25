@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireSession, route, notFound, conflict } from "@/lib/authz";
+import { requirePermission, route, notFound, conflict } from "@/lib/authz";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export const DELETE = route<Ctx>(async (_req, { params }) => {
-  await requireSession("ADMIN");
+  await requirePermission("org.structure");
   const { id } = await params;
   const existing = await db.designation.findUnique({ where: { id } });
   if (!existing) throw notFound("Designation");

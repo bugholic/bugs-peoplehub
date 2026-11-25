@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { requireSession, route, isAdmin } from "@/lib/authz";
+import { requirePermission, route, can } from "@/lib/authz";
 import { parseQuery } from "@/lib/validators";
 import { getMonth, summarize } from "@/lib/attendance";
 import { formatMinutes } from "@/lib/dates";
@@ -22,11 +22,11 @@ function toCsv(rows: { empCode: string; name: string; present: number; absent: n
 }
 
 export const GET = route(async (req) => {
-  const session = await requireSession("ADMIN", "MANAGER");
+  const session = await requirePermission("attendance.report_all", "attendance.report_team");
   const q = parseQuery(query, req);
 
   const team = await db.employee.findMany({
-    where: isAdmin(session) ? { status: "ACTIVE" } : { status: "ACTIVE", reportingManagerId: session.employeeId },
+    where: can(session, "attendance.report_all") ? { status: "ACTIVE" } : { status: "ACTIVE", reportingManagerId: session.employeeId },
     select: { id: true, empCode: true, firstName: true, lastName: true },
     orderBy: { firstName: "asc" },
   });

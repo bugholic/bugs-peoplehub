@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, dbUnscoped } from "@/lib/db";
 import { requireSession, route } from "@/lib/authz";
 
 export const GET = route(async () => {
@@ -18,5 +18,6 @@ export const GET = route(async () => {
       reportingManagerId: true,
     },
   });
-  return NextResponse.json({ session, employee });
+  const org = await dbUnscoped.organization.findUnique({ where: { id: session.organizationId }, select: { bannerUrl: true } });
+  return NextResponse.json({ session, employee, organization: { bannerUrl: org?.bannerUrl ?? null } });
 });

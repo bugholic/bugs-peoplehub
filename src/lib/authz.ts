@@ -7,6 +7,7 @@ import { db } from "./db";
 import { ApiError, badRequest, forbidden, unauthorized } from "./errors";
 import { provisionEmployee } from "./provision";
 import { roleFromOrgRole, type Role, type Session } from "./session";
+import { ALL_PERMISSIONS, defaultPermissions, sanitizePermissions, type Permission } from "./permissions";
 
 export { ApiError, badRequest, conflict, forbidden, notFound, unauthorized } from "./errors";
 
@@ -27,8 +28,20 @@ const resolve = cache(async (): Promise<Resolved> => {
   if (!userId) return { status: "signed-out" };
   if (!orgId) return { status: "no-org" };
 
-  const employee = (await db.employee.findFirst({ where: { clerkUserId: userId } })) ?? (await provisionEmployee(userId, orgId));
+  const linked = await db.employee.findFirst({ where: { clerkUserId: userId }, include: { accessRole: true } });
+  const employee = linked ?? (await provisionEmployee(userId, orgId));
   if (!employee || employee.status !== "ACTIVE") return { status: "no-employee" };
+
+  // A directory record linked just now may already have had a role assigned by an admin.
+  const accessRole = linked
+    ? linked.accessRole
+    : employee.accessRoleId
+      ? await db.accessRole.findUnique({ where: { id: employee.accessRoleId } })
+      : null;
+  const role = roleFromOrgRole(orgRole);
+  // Clerk org admins can't be narrowed by a custom role, so an org can never lock itself out.
+  const permissions =
+    role === "ADMIN" ? ALL_PERMISSIONS : accessRole ? sanitizePermissions(accessRole.permissions) : defaultPermissions(role);
 
   return {
     status: "ok",
@@ -36,8 +49,10 @@ const resolve = cache(async (): Promise<Resolved> => {
       userId,
       organizationId: orgId,
       employeeId: employee.id,
-      role: roleFromOrgRole(orgRole),
+      role,
       name: `${employee.firstName} ${employee.lastName}`.trim(),
+      accessRole: role !== "ADMIN" && accessRole ? { id: accessRole.id, name: accessRole.name } : null,
+      permissions,
     },
   };
 });
@@ -64,8 +79,24 @@ export async function requireSession(...roles: Role[]): Promise<Session> {
   return s;
 }
 
+/** For pages: redirect to the dashboard unless the user holds at least one of `perms`. */
+export async function requirePagePermission(...perms: Permission[]): Promise<Session> {
+  const s = await requirePageSession();
+  if (!perms.some((p) => can(s, p))) redirect("/dashboard");
+  return s;
+}
+
+/** For API handlers: 401 when signed out, 403 unless the user holds at least one of `perms`. */
+export async function requirePermission(...perms: Permission[]): Promise<Session> {
+  const s = await requireSession();
+  if (!perms.some((p) => can(s, p))) throw forbidden();
+  return s;
+}
+
+export const can = (s: Session, p: Permission) => s.permissions.includes(p);
+
+/** Clerk org admin: the only tier that can manage roles (so nobody can grant themselves more access). */
 export const isAdmin = (s: Session) => s.role === "ADMIN";
-export const isManagerOrAdmin = (s: Session) => s.role === "ADMIN" || s.role === "MANAGER";
 
 /** True when `employeeId` reports directly to the session user. */
 export async function isDirectManagerOf(s: Session, employeeId: string): Promise<boolean> {
@@ -73,19 +104,21 @@ export async function isDirectManagerOf(s: Session, employeeId: string): Promise
   return e?.reportingManagerId === s.employeeId;
 }
 
-/** Self, direct manager, or admin may view an employee's leave/attendance. */
-export async function assertCanViewEmployee(s: Session, employeeId: string) {
-  if (employeeId === s.employeeId || isAdmin(s)) return;
-  if (await isDirectManagerOf(s, employeeId)) return;
+export type Module = "leave" | "attendance";
+
+/** Self always; otherwise `<module>.approve_all`, or `<module>.approve_team` for a direct report. */
+export async function assertCanViewEmployee(s: Session, employeeId: string, module: Module) {
+  if (employeeId === s.employeeId || can(s, `${module}.approve_all`)) return;
+  if (can(s, `${module}.approve_team`) && (await isDirectManagerOf(s, employeeId))) return;
   throw forbidden();
 }
 
-/** Admin or the applicant's direct manager may decide a request; never your own. */
-export async function assertCanApprove(s: Session, applicantId: string) {
+/** `<module>.approve_all`, or `<module>.approve_team` for the applicant's direct manager; never your own request. */
+export async function assertCanApprove(s: Session, applicantId: string, module: Module) {
   if (applicantId === s.employeeId) throw forbidden("You can't approve your own request");
-  if (isAdmin(s)) return;
-  if (await isDirectManagerOf(s, applicantId)) return;
-  throw forbidden("Only the reporting manager or an admin can decide this request");
+  if (can(s, `${module}.approve_all`)) return;
+  if (can(s, `${module}.approve_team`) && (await isDirectManagerOf(s, applicantId))) return;
+  throw forbidden("You don't have permission to decide this request");
 }
 
 type Handler<C> = (req: Request, ctx: C) => Promise<Response>;

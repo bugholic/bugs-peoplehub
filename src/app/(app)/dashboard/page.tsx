@@ -8,7 +8,7 @@ import { CheckIcon, LogInIcon, LogOutIcon, PinIcon, XIcon } from "@/components/i
 import { APP_TZ, formatDate, formatDuration, formatMinutes, formatTime, parseIsoDate, todayIso } from "@/lib/dates";
 import { punch as punchWithLocation, punchMessage, WORK_MODE_LABEL, type PunchAction, type PunchLog } from "@/lib/punch";
 
-type Me = { session: { name: string; role: "ADMIN" | "MANAGER" | "EMPLOYEE" }; employee: { id: string } };
+type Me = { session: { name: string; permissions: string[] }; employee: { id: string } };
 type AttendanceDay = Omit<PunchLog, "remoteRequest"> & {
   status: string;
   remoteStatus: "PENDING" | "APPROVED" | "REJECTED" | null;
@@ -51,16 +51,17 @@ export default function DashboardPage() {
       setMe(meRes);
       const month = todayIso().slice(0, 7);
       const year = Number(todayIso().slice(0, 4));
-      const isApprover = meRes.session.role === "ADMIN" || meRes.session.role === "MANAGER";
-
-      const isHr = meRes.session.role === "ADMIN";
+      const can = (p: string) => meRes.session.permissions.includes(p);
+      const leaveApprover = can("leave.approve_team") || can("leave.approve_all");
+      const regApprover = can("attendance.approve_team") || can("attendance.approve_all");
+      const isHr = can("attendance.remote_approve");
 
       const [attendance, bal, hol, leaveReqs, regReqs, remoteReqs] = await Promise.all([
         apiFetch<{ days: AttendanceDay[] }>(`/api/attendance?month=${month}`),
         apiFetch<{ balances: Balance[] }>("/api/leave/balances"),
         apiFetch<{ items: Holiday[] }>(`/api/holidays?year=${year}`),
-        isApprover ? apiFetch<{ items: LeaveRequest[] }>("/api/leave/requests?scope=team&status=PENDING") : Promise.resolve({ items: [] }),
-        isApprover ? apiFetch<{ items: Regularization[] }>("/api/attendance/regularizations?scope=team&status=PENDING") : Promise.resolve({ items: [] }),
+        leaveApprover ? apiFetch<{ items: LeaveRequest[] }>("/api/leave/requests?scope=team&status=PENDING") : Promise.resolve({ items: [] }),
+        regApprover ? apiFetch<{ items: Regularization[] }>("/api/attendance/regularizations?scope=team&status=PENDING") : Promise.resolve({ items: [] }),
         isHr ? apiFetch<{ items: RemoteRequest[] }>("/api/attendance/remote-requests?scope=all&status=PENDING") : Promise.resolve({ items: [] }),
       ]);
 

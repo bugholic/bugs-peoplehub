@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
-import { requireSession, route, readJson, isAdmin } from "@/lib/authz";
+import { requireSession, requirePermission, route, readJson, can } from "@/lib/authz";
 import { assertRefsInOrg } from "@/lib/refs";
 import { nextEmpCode } from "@/lib/org";
 import { employeeCreateSchema, employeeListQuery, parseQuery } from "@/lib/validators";
@@ -30,7 +30,7 @@ const summary = {
 export const GET = route(async (req) => {
   const session = await requireSession();
   const q = parseQuery(employeeListQuery, req);
-  const status = q.status === "ALL" ? undefined : isAdmin(session) ? q.status : "ACTIVE";
+  const status = q.status === "ALL" ? undefined : can(session, "employees.view_inactive") ? q.status : "ACTIVE";
 
   const where: Prisma.EmployeeWhereInput = {
     status,
@@ -63,7 +63,7 @@ export const GET = route(async (req) => {
 });
 
 export const POST = route(async (req) => {
-  const session = await requireSession("ADMIN");
+  const session = await requirePermission("employees.create");
   const body = employeeCreateSchema.parse(await readJson(req));
 
   await assertRefsInOrg(body);

@@ -1,16 +1,32 @@
 import { z } from "zod";
 import { isIsoDate } from "./dates";
 import { badRequest } from "./errors";
+import { isPermission } from "./permissions";
+import { normalizePhone } from "./phone";
 
 const isoDate = z.string().refine(isIsoDate, "Must be a date in YYYY-MM-DD format");
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Must be a time in HH:mm format");
 const id = z.string().min(1);
 
+/** Accepts any common format; stores E.164. A number without a country code gets +91 (see lib/phone.ts). */
+const phone = z
+  .string()
+  .max(30)
+  .nullable()
+  .transform((v, ctx) => {
+    try {
+      return normalizePhone(v);
+    } catch (e) {
+      ctx.addIssue({ code: "custom", message: (e as Error).message });
+      return z.NEVER;
+    }
+  });
+
 export const employeeCreateSchema = z.object({
   firstName: z.string().trim().min(1).max(60),
   lastName: z.string().trim().min(1).max(60),
   email: z.email(),
-  phone: z.string().trim().max(30).optional().nullable(),
+  phone: phone.optional(),
   joinDate: isoDate,
   departmentId: id.optional().nullable(),
   designationId: id.optional().nullable(),
@@ -24,7 +40,7 @@ export const employeeUpdateSchema = employeeCreateSchema.partial().extend({
 });
 
 /** Fields an employee may change on their own profile. */
-export const selfUpdateSchema = z.object({ phone: z.string().trim().max(30).nullable() }).strict();
+export const selfUpdateSchema = z.object({ phone }).strict();
 
 export const employeeListQuery = z.object({
   q: z.string().trim().optional(),
@@ -51,14 +67,28 @@ export const leaveListQuery = z.object({
 
 export const decisionSchema = z.object({ note: z.string().trim().max(500).optional() });
 
-export const leaveTypeSchema = z.object({
+const leaveTypeFields = {
   name: z.string().trim().min(1).max(60),
   code: z.string().trim().min(1).max(10).toUpperCase(),
   annualQuota: z.number().min(0).max(365),
-  paid: z.boolean().default(true),
-  carryForward: z.boolean().default(false),
-  allowHalfDay: z.boolean().default(true),
+  paid: z.boolean(),
+  carryForward: z.boolean(),
+  // Cap on unused days carried into the next year; null = no cap. Only used when carryForward is on.
+  maxCarryForward: z.number().min(0).max(365).multipleOf(0.5).nullable(),
+  allowHalfDay: z.boolean(),
+};
+
+export const leaveTypeSchema = z.object({
+  ...leaveTypeFields,
+  paid: leaveTypeFields.paid.default(true),
+  carryForward: leaveTypeFields.carryForward.default(false),
+  maxCarryForward: leaveTypeFields.maxCarryForward.default(null),
+  allowHalfDay: leaveTypeFields.allowHalfDay.default(true),
 });
+
+// Built from the default-free fields: `.partial()` keeps a field's `.default()`, which
+// would silently reset e.g. `paid` to true on every partial edit.
+export const leaveTypeUpdateSchema = z.object(leaveTypeFields).partial().strict();
 
 export const holidaySchema = z.object({
   date: isoDate,
@@ -133,3 +163,14 @@ export const addMemberSchema = z.object({
   email: z.email(),
   role: z.enum(["ADMIN", "MANAGER", "EMPLOYEE"]).default("EMPLOYEE"),
 });
+
+export const accessRoleSchema = z.object({
+  name: z.string().trim().min(1).max(60),
+  description: z.string().trim().max(200).nullable().optional(),
+  // Unknown keys are rejected rather than silently dropped, so a typo can't look like it saved.
+  permissions: z.array(z.string().refine(isPermission, "Unknown permission")).max(100),
+});
+
+export const accessRoleUpdateSchema = accessRoleSchema.partial();
+
+export const assignAccessRoleSchema = z.object({ accessRoleId: id.nullable() });

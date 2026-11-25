@@ -42,28 +42,19 @@ export async function provisionEmployee(clerkUserId: string, organizationId: str
   });
   if (unlinked) return db.employee.update({ where: { id: unlinked.id }, data: { clerkUserId } });
 
-  const types = await db.leaveType.findMany({ where: { active: true, annualQuota: { gt: 0 } } });
-  const year = new Date().getUTCFullYear();
-
+  // Leave balances aren't created here: src/lib/leave.ts#ensureBalances creates them
+  // (prorated by joinDate) on first use, for this and every other way an employee is added.
   const empCode = await nextEmpCode(organizationId);
   try {
-    return await db.$transaction(async (tx) => {
-      const employee = await tx.employee.create({
-        data: {
-          empCode,
-          firstName: user.firstName || email.split("@")[0],
-          lastName: user.lastName ?? "",
-          email,
-          joinDate: todayUtc(),
-          clerkUserId,
-        },
-      });
-      if (types.length) {
-        await tx.leaveBalance.createMany({
-          data: types.map((t) => ({ employeeId: employee.id, leaveTypeId: t.id, year, granted: t.annualQuota, used: 0 })),
-        });
-      }
-      return employee;
+    return await db.employee.create({
+      data: {
+        empCode,
+        firstName: user.firstName || email.split("@")[0],
+        lastName: user.lastName ?? "",
+        email,
+        joinDate: todayUtc(),
+        clerkUserId,
+      },
     });
   } catch (e) {
     if (!isUniqueViolation(e)) throw e;

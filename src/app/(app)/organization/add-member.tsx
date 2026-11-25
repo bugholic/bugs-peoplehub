@@ -5,7 +5,7 @@ import { apiFetch, errorMessage } from "@/lib/api-client";
 import { Alert, Button, Card, CardTitle, Field, Input, Select } from "@/components/ui";
 
 /** Add someone who already has an account to this organization, without an email invitation. */
-export function AddMember() {
+export function AddMember({ canAddAdmin }: { canAddAdmin: boolean }) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("EMPLOYEE");
   const [msg, setMsg] = useState<{ kind: "error" | "success"; text: string } | null>(null);
@@ -40,7 +40,7 @@ export function AddMember() {
           <Select value={role} onChange={(e) => setRole(e.target.value)}>
             <option value="EMPLOYEE">Employee</option>
             <option value="MANAGER">Manager</option>
-            <option value="ADMIN">Admin</option>
+            {canAddAdmin && <option value="ADMIN">Admin</option>}
           </Select>
         </Field>
         <Button type="submit" disabled={busy} className="h-11">

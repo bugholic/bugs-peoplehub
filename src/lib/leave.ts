@@ -34,6 +34,36 @@ export function assertSufficientBalance(b: BalanceLike, requested: number) {
   }
 }
 
+/**
+ * Days of a leave type granted for `year`. In the join year the quota is prorated by
+ * whole months remaining (a join on or before the 15th counts that month), rounded
+ * to the nearest half day; before the join year nothing is granted.
+ */
+export function grantForYear(annualQuota: number, year: number, joinDate: Date): number {
+  const joinYear = joinDate.getUTCFullYear();
+  if (year < joinYear) return 0;
+  if (year > joinYear) return annualQuota;
+  const monthsLeft = 12 - joinDate.getUTCMonth() - (joinDate.getUTCDate() > 15 ? 1 : 0);
+  return Math.round(((annualQuota * monthsLeft) / 12) * 2) / 2;
+}
+
+export type YearBalance = { year: number; granted: number; used: number };
+
+/**
+ * Unused balance carried into `year` from the years before it: each year passes on
+ * max(0, granted + carriedIn - used), optionally capped. Computed rather than stored,
+ * so a late approval of last year's leave still corrects this year's carry.
+ */
+export function carriedInto(rows: readonly YearBalance[], year: number, cap: number | null = null): number {
+  const prior = rows.filter((r) => r.year < year).sort((a, b) => a.year - b.year);
+  let carry = 0;
+  for (const r of prior) {
+    carry = Math.max(0, round1(r.granted + carry - r.used));
+    if (cap !== null) carry = Math.min(carry, cap);
+  }
+  return carry;
+}
+
 const round1 = (n: number) => Math.round(n * 10) / 10;
 const num = (d: Prisma.Decimal | number) => Number(d);
 
@@ -47,11 +77,65 @@ export async function holidaySet(locationId: string | null, from: Date, to: Date
   return new Set(rows.map((r) => toIsoDate(r.date)));
 }
 
-/** Balances per leave type for a year, with pending days reserved. */
+const currentYear = () => Number(todayIso().slice(0, 4));
+
+/**
+ * Creates any missing LeaveBalance rows for the employee, for every active leave type,
+ * up to `year`. Each type starts at its own first row for this employee; a type with
+ * none (a new employee, or a leave type added later) starts at this year (or the join
+ * year, if later), so adding a type never grants it retroactively. Gaps between the
+ * start and `year` (e.g. a year nobody opened the app) are filled with that year's grant.
+ * Idempotent and race-safe (skipDuplicates on the unique key), so new employees, new
+ * leave types and a new calendar year all get balances on first use without a cron.
+ * Never creates rows more than one year ahead.
+ */
+export async function ensureBalances(employeeId: string, year: number) {
+  const thisYear = currentYear();
+  if (year > thisYear + 1) return;
+  const employee = await db.employee.findUnique({ where: { id: employeeId }, select: { joinDate: true } });
+  if (!employee) return;
+  const joinYear = employee.joinDate.getUTCFullYear();
+  const [types, existing] = await Promise.all([
+    db.leaveType.findMany({ where: { active: true }, select: { id: true, annualQuota: true } }),
+    db.leaveBalance.findMany({ where: { employeeId, year: { lte: year } }, select: { leaveTypeId: true, year: true } }),
+  ]);
+
+  const have = new Set(existing.map((b) => `${b.leaveTypeId}:${b.year}`));
+  const data = [];
+  for (const t of types) {
+    const years = existing.filter((b) => b.leaveTypeId === t.id).map((b) => b.year);
+    const start = Math.max(joinYear, years.length ? Math.min(...years) : Math.min(year, thisYear));
+    for (let y = start; y <= year; y++) {
+      if (have.has(`${t.id}:${y}`)) continue;
+      data.push({ employeeId, leaveTypeId: t.id, year: y, granted: grantForYear(num(t.annualQuota), y, employee.joinDate), used: 0 });
+    }
+  }
+  if (data.length) await db.leaveBalance.createMany({ data, skipDuplicates: true });
+}
+
+type BalanceRow = { leaveTypeId: string; year: number; granted: Prisma.Decimal; used: Prisma.Decimal };
+
+/** This year's grant plus whatever carries in from earlier years (carry-forward types only). */
+function entitlement(
+  rows: readonly BalanceRow[],
+  type: { id: string; carryForward: boolean; maxCarryForward: Prisma.Decimal | null },
+  year: number,
+) {
+  const mine = rows
+    .filter((r) => r.leaveTypeId === type.id)
+    .map((r) => ({ year: r.year, granted: num(r.granted), used: num(r.used) }));
+  const row = mine.find((r) => r.year === year);
+  const cap = type.maxCarryForward === null ? null : num(type.maxCarryForward);
+  const carried = type.carryForward ? carriedInto(mine, year, cap) : 0;
+  return { annualGrant: row?.granted ?? 0, carried, used: row?.used ?? 0 };
+}
+
+/** Balances per leave type for a year (including carried-forward days), with pending days reserved. */
 export async function getBalances(employeeId: string, year: number) {
+  await ensureBalances(employeeId, year);
   const [types, balances, pending] = await Promise.all([
     db.leaveType.findMany({ where: { active: true }, orderBy: { name: "asc" } }),
-    db.leaveBalance.findMany({ where: { employeeId, year } }),
+    db.leaveBalance.findMany({ where: { employeeId, year: { lte: year } } }),
     db.leaveRequest.groupBy({
       by: ["leaveTypeId"],
       where: {
@@ -63,20 +147,25 @@ export async function getBalances(employeeId: string, year: number) {
     }),
   ]);
   return types.map((t) => {
-    const b = balances.find((x) => x.leaveTypeId === t.id);
+    const { annualGrant, carried, used } = entitlement(balances, t, year);
     const p = pending.find((x) => x.leaveTypeId === t.id)?._sum.days;
-    const granted = b ? num(b.granted) : 0;
-    const used = b ? num(b.used) : 0;
     const pend = p ? num(p) : 0;
+    const granted = round1(annualGrant + carried);
+    const available = availableBalance({ granted, used, pending: pend });
     return {
       leaveTypeId: t.id,
       code: t.code,
       name: t.name,
       paid: t.paid,
+      // Unpaid types (e.g. Loss of Pay) aren't limited by a balance; usage is still tracked.
+      unlimited: !t.paid,
+      annualGrant,
+      carriedForward: carried,
+      // Total entitlement for the year: annualGrant + carriedForward.
       granted,
       used,
       pending: pend,
-      available: availableBalance({ granted, used, pending: pend }),
+      available: t.paid ? available : Math.max(0, available),
     };
   });
 }
@@ -119,7 +208,8 @@ export async function applyLeave(employeeId: string, input: ApplyInput) {
   if (overlap) throw conflict("You already have leave booked on some of these dates", "OVERLAP");
 
   const balance = (await getBalances(employeeId, from.getUTCFullYear())).find((b) => b.leaveTypeId === type.id)!;
-  assertSufficientBalance(balance, days);
+  // Unpaid leave (Loss of Pay) isn't limited by a balance.
+  if (type.paid) assertSufficientBalance(balance, days);
 
   return db.leaveRequest.create({
     data: {
@@ -137,17 +227,21 @@ export async function applyLeave(employeeId: string, input: ApplyInput) {
 
 /** Approve: deduct balance atomically. Re-checks balance in case it changed. */
 export async function approveLeave(requestId: string, deciderId: string, note?: string) {
+  const pre = await db.leaveRequest.findUnique({ where: { id: requestId }, select: { employeeId: true, fromDate: true } });
+  if (pre) await ensureBalances(pre.employeeId, pre.fromDate.getUTCFullYear());
   return db.$transaction(async (tx) => {
-    const r = await tx.leaveRequest.findUnique({ where: { id: requestId } });
+    const r = await tx.leaveRequest.findUnique({ where: { id: requestId }, include: { leaveType: true } });
     if (!r) throw notFound("Leave request");
     if (r.status !== "PENDING") throw conflict(`Request is already ${r.status.toLowerCase()}`, "NOT_PENDING");
     const year = r.fromDate.getUTCFullYear();
-    const bal = await tx.leaveBalance.findUnique({
-      where: { employeeId_leaveTypeId_year: { employeeId: r.employeeId, leaveTypeId: r.leaveTypeId, year } },
-    });
-    const granted = bal ? num(bal.granted) : 0;
-    const used = bal ? num(bal.used) : 0;
-    assertSufficientBalance({ granted, used, pending: 0 }, num(r.days));
+    // Unpaid leave (Loss of Pay) isn't limited by a balance; paid leave re-checks it, carry-forward included.
+    if (r.leaveType.paid) {
+      const rows = await tx.leaveBalance.findMany({
+        where: { employeeId: r.employeeId, leaveTypeId: r.leaveTypeId, year: { lte: year } },
+      });
+      const { annualGrant, carried, used } = entitlement(rows, r.leaveType, year);
+      assertSufficientBalance({ granted: annualGrant + carried, used, pending: 0 }, num(r.days));
+    }
     await tx.leaveBalance.upsert({
       where: { employeeId_leaveTypeId_year: { employeeId: r.employeeId, leaveTypeId: r.leaveTypeId, year } },
       create: { employeeId: r.employeeId, leaveTypeId: r.leaveTypeId, year, granted: 0, used: r.days },

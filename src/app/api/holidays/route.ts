@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { assertRefsInOrg } from "@/lib/refs";
-import { requireSession, route, readJson } from "@/lib/authz";
+import { requireSession, requirePermission, route, readJson } from "@/lib/authz";
 import { holidaySchema, parseQuery } from "@/lib/validators";
 import { toIsoDate } from "@/lib/dates";
 
@@ -30,7 +30,7 @@ export const GET = route(async (req) => {
 });
 
 export const POST = route(async (req) => {
-  await requireSession("ADMIN");
+  await requirePermission("holidays.manage");
   const body = holidaySchema.parse(await readJson(req));
   await assertRefsInOrg({ locationId: body.locationId });
   const holiday = await db.holiday.create({

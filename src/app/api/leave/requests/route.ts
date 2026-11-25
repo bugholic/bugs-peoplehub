@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
-import { requireSession, route, readJson, isAdmin } from "@/lib/authz";
+import { requireSession, route, readJson, can, forbidden } from "@/lib/authz";
 import { leaveApplySchema, leaveListQuery, parseQuery } from "@/lib/validators";
 import { applyLeave, leaveRequestInclude, serializeLeaveRequest } from "@/lib/leave";
 
@@ -16,9 +16,10 @@ export const GET = route(async (req) => {
   if (q.scope === "mine") {
     where.employeeId = session.employeeId;
   } else if (q.scope === "team") {
+    if (!can(session, "leave.approve_team") && !can(session, "leave.approve_all")) throw forbidden();
     where.employee = { reportingManagerId: session.employeeId };
   } else {
-    if (!isAdmin(session)) where.employee = { reportingManagerId: session.employeeId };
+    if (!can(session, "leave.approve_all")) throw forbidden();
   }
 
   const requests = await db.leaveRequest.findMany({

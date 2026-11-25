@@ -36,7 +36,7 @@ type Regularization = {
   reason: string;
   status: "PENDING" | "APPROVED" | "REJECTED";
 };
-type Me = { role: "ADMIN" | "MANAGER" | "EMPLOYEE"; employeeId: string };
+type Me = { employeeId: string; permissions: string[] };
 
 const TABS = ["My attendance", "Regularizations", "Remote work", "Team report", "Office locations"] as const;
 
@@ -48,9 +48,12 @@ export default function AttendancePage() {
     apiFetch<{ session: Me }>("/api/me").then((r) => setMe(r.session)).catch(() => {});
   }, []);
 
-  const isApprover = me?.role === "ADMIN" || me?.role === "MANAGER";
-  const isHr = me?.role === "ADMIN";
-  const visibleTabs = TABS.filter((t) => (t === "Team report" ? isApprover : t === "Office locations" ? isHr : true));
+  const can = (p: string) => me?.permissions.includes(p) ?? false;
+  const isApprover = can("attendance.approve_team") || can("attendance.approve_all");
+  const isHr = can("attendance.remote_approve");
+  const canReport = can("attendance.report_team") || can("attendance.report_all");
+  const canLocations = can("attendance.manage_locations");
+  const visibleTabs = TABS.filter((t) => (t === "Team report" ? canReport : t === "Office locations" ? canLocations : true));
 
   return (
     <div>
@@ -60,8 +63,8 @@ export default function AttendancePage() {
       {tab === "My attendance" && <MyAttendanceTab />}
       {tab === "Regularizations" && <RegularizationsTab isApprover={isApprover} />}
       {tab === "Remote work" && <RemoteWorkTab isHr={isHr} myId={me?.employeeId} />}
-      {tab === "Team report" && isApprover && <TeamReportTab />}
-      {tab === "Office locations" && isHr && <OfficeLocationsTab />}
+      {tab === "Team report" && canReport && <TeamReportTab />}
+      {tab === "Office locations" && canLocations && <OfficeLocationsTab />}
     </div>
   );
 }

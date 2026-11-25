@@ -5,7 +5,7 @@ import { formatEmpCode, orgPrefix } from "./emp-code";
 const isUniqueViolation = (e: unknown) => (e as { code?: string })?.code === "P2002";
 
 /** Registers the Clerk org locally the first time it's seen, fixing its employee-code prefix. */
-async function ensureOrganization(organizationId: string) {
+export async function ensureOrganization(organizationId: string) {
   const existing = await dbUnscoped.organization.findUnique({ where: { id: organizationId } });
   if (existing) return existing;
 

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { clerkClient } from "@clerk/nextjs/server";
-import { requireSession, route, readJson, badRequest, notFound, conflict } from "@/lib/authz";
+import { requirePermission, route, readJson, badRequest, notFound, conflict, forbidden, isAdmin } from "@/lib/authz";
 import { addMemberSchema } from "@/lib/validators";
 import { orgRoleFromRole } from "@/lib/session";
 
@@ -12,8 +12,9 @@ type ClerkError = { status?: number; errors?: { code?: string; longMessage?: str
  * Their Employee record is created/linked on their first visit (see provisionEmployee).
  */
 export const POST = route(async (req) => {
-  const session = await requireSession("ADMIN");
+  const session = await requirePermission("org.members");
   const body = addMemberSchema.parse(await readJson(req));
+  if (body.role === "ADMIN" && !isAdmin(session)) throw forbidden("Only organization admins can add another admin");
   const clerk = await clerkClient();
 
   const { data: users } = await clerk.users.getUserList({ emailAddress: [body.email], limit: 1 });

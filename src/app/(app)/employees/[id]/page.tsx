@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useParams } from "next/navigation";
-import { apiFetch, errorMessage } from "@/lib/api-client";
-import { Alert, Avatar, Badge, Button, Card, CardTitle, Field, Input, Spinner } from "@/components/ui";
+import { apiFetch, errorMessage, invalidateApiCache } from "@/lib/api-client";
+import { Alert, Avatar, Badge, Button, Card, CardTitle, Field, Spinner } from "@/components/ui";
 import { BriefcaseIcon, CalendarIcon, ChevronLeftIcon, MailIcon, PhoneIcon, PinIcon, UsersIcon } from "@/components/icons";
 import { formatDate } from "@/lib/dates";
+import { formatPhone } from "@/lib/phone";
+import { PhoneInput } from "@/components/phone-input";
 
 type Lookup = { id: string; name: string };
 type Employee = {
@@ -30,7 +32,8 @@ type Employee = {
 export default function EmployeeDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [employee, setEmployee] = useState<Employee | null>(null);
-  const [me, setMe] = useState<{ employeeId: string; role: string } | null>(null);
+  const [me, setMe] = useState<{ employeeId: string; permissions: string[] } | null>(null);
+  const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [phone, setPhone] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -41,11 +44,12 @@ export default function EmployeeDetailPage() {
     try {
       const [emp, meRes] = await Promise.all([
         apiFetch<Employee>(`/api/employees/${id}`),
-        apiFetch<{ session: { employeeId: string; role: string } }>("/api/me"),
+        apiFetch<{ session: { employeeId: string; permissions: string[] }; organization: { bannerUrl: string | null } }>("/api/me"),
       ]);
       setEmployee(emp);
       setPhone(emp.phone ?? "");
       setMe(meRes.session);
+      setBannerUrl(meRes.organization.bannerUrl);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -59,7 +63,8 @@ export default function EmployeeDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  const isAdmin = me?.role === "ADMIN";
+  const canEdit = me?.permissions.includes("employees.edit") ?? false;
+  const canDeactivate = me?.permissions.includes("employees.deactivate") ?? false;
   const isSelf = me?.employeeId === id;
 
   const fileRef = useRef<HTMLInputElement>(null);
@@ -74,6 +79,7 @@ export default function EmployeeDetailPage() {
       body.append("file", file);
       // Plain fetch: apiFetch forces a JSON Content-Type, which breaks the multipart boundary.
       const res = await fetch(`/api/employees/${id}/photo`, { method: "PUT", body });
+      invalidateApiCache(); // bypasses apiFetch, so drop the GET cache by hand
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.error?.message ?? `Upload failed (${res.status})`);
       setEmployee((e) => (e ? { ...e, photoUrl: json.photoUrl } : e));
@@ -143,14 +149,23 @@ export default function EmployeeDetailPage() {
 
       {/* Profile header */}
       <div className="mb-6 overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
-        <div className="relative h-28 bg-night">
-          <div aria-hidden className="absolute -right-10 -top-16 size-56 rounded-full bg-brand/45 blur-3xl" />
-          <div aria-hidden className="absolute left-1/3 top-6 size-24 rounded-full bg-marigold/25 blur-2xl" />
+        <div className="relative h-28 overflow-hidden bg-night sm:h-36">
+          {bannerUrl ? (
+            // Served by our auth-checked API route (private bucket), so next/image's optimizer can't fetch it.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={bannerUrl} alt="" className="size-full object-cover" />
+          ) : (
+            <>
+              <div aria-hidden className="absolute -right-10 -top-16 size-56 rounded-full bg-brand/45 blur-3xl" />
+              <div aria-hidden className="absolute left-1/3 top-6 size-24 rounded-full bg-marigold/25 blur-2xl" />
+            </>
+          )}
         </div>
-        <div className="flex flex-wrap items-end justify-between gap-4 px-6 pb-6">
-          <div className="-mt-10 flex items-end gap-4">
-            <Avatar name={fullName} size="xl" className="ring-4 ring-surface" photoUrl={employee.photoUrl} />
-            <div className="pb-1">
+        {/* relative: paints above the positioned banner; only the avatar overlaps it, the text stays below on bg-surface */}
+        <div className="relative flex flex-wrap items-end justify-between gap-4 px-6 pb-6">
+          <div className="flex items-start gap-4">
+            <Avatar name={fullName} size="xl" className="-mt-10 ring-4 ring-surface" photoUrl={employee.photoUrl} />
+            <div className="pt-3">
               <h1 className="font-display text-2xl font-semibold tracking-tight text-ink sm:text-3xl">{fullName}</h1>
               <p className="text-ink-2">
                 {employee.designation?.name ?? "No designation"}
@@ -159,7 +174,7 @@ export default function EmployeeDetailPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            {(isAdmin || isSelf) && (
+            {(canEdit || isSelf) && (
               <>
                 <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={(e) => uploadPhoto(e.target.files?.[0])} />
                 <Button variant="secondary" size="sm" disabled={saving} onClick={() => fileRef.current?.click()}>
@@ -173,7 +188,7 @@ export default function EmployeeDetailPage() {
               </>
             )}
             <Badge status={employee.status} />
-            {isAdmin && employee.status === "ACTIVE" && (
+            {canDeactivate && employee.status === "ACTIVE" && (
               <Button variant="secondary" size="sm" disabled={saving} onClick={deactivate} className="text-rose-600 dark:text-rose-400">
                 Deactivate
               </Button>
@@ -191,7 +206,7 @@ export default function EmployeeDetailPage() {
           <dl className="grid gap-x-6 gap-y-5 sm:grid-cols-2">
             <Detail icon={<BriefcaseIcon size={17} />} label="Employee code" value={<span className="font-mono">{employee.empCode}</span>} />
             <Detail icon={<MailIcon size={17} />} label="Email" value={<a href={`mailto:${employee.email}`} className="hover:text-brand-ink">{employee.email}</a>} />
-            <Detail icon={<PhoneIcon size={17} />} label="Phone" value={employee.phone ?? "Not added"} />
+            <Detail icon={<PhoneIcon size={17} />} label="Phone" value={employee.phone ? <a href={`tel:${employee.phone}`} className="hover:text-brand-ink">{formatPhone(employee.phone)}</a> : "Not added"} />
             <Detail icon={<PinIcon size={17} />} label="Location" value={employee.location?.name ?? "—"} />
             <Detail
               icon={<UsersIcon size={17} />}
@@ -211,11 +226,11 @@ export default function EmployeeDetailPage() {
           </dl>
         </Card>
 
-        {(isAdmin || isSelf) && (
+        {(canEdit || isSelf) && (
           <Card className="self-start">
             <CardTitle>Contact</CardTitle>
             <Field label="Phone">
-              <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 98765 43210" />
+              <PhoneInput key={employee.phone ?? ""} value={phone} onChange={setPhone} />
             </Field>
             <Button className="mt-4 w-full" disabled={saving} onClick={savePhone}>
               {saving ? "Saving…" : "Save phone"}

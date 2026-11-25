@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireSession, route, notFound, forbidden, badRequest, isAdmin } from "@/lib/authz";
+import { requireSession, route, notFound, forbidden, badRequest, can } from "@/lib/authz";
 import { MAX_PHOTO_BYTES, deleteObject, getObject, photoKey, putObject, sniffImage } from "@/lib/storage";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -24,10 +24,10 @@ export const GET = route<Ctx>(async (_req, { params }) => {
   });
 });
 
-/** An employee may change their own photo; admins may change anyone's. */
+/** An employee may change their own photo; `employees.edit` may change anyone's. */
 async function authorize(id: string) {
   const session = await requireSession();
-  if (id !== session.employeeId && !isAdmin(session)) throw forbidden();
+  if (id !== session.employeeId && !can(session, "employees.edit")) throw forbidden();
   if (!(await db.employee.findUnique({ where: { id }, select: { id: true } }))) throw notFound("Employee");
   return session;
 }

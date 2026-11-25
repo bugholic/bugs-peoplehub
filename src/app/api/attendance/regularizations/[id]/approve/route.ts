@@ -12,7 +12,7 @@ export const POST = route<Ctx>(async (req, { params }) => {
   const { note } = decisionSchema.parse(await req.json().catch(() => ({})));
   const existing = await db.regularizationRequest.findUnique({ where: { id } });
   if (!existing) throw notFound("Regularization request");
-  await assertCanApprove(session, existing.employeeId);
+  await assertCanApprove(session, existing.employeeId, "attendance");
   const updated = await decideRegularization(id, session.employeeId, true, note);
   return NextResponse.json(updated);
 });

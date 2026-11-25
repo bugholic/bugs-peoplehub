@@ -10,6 +10,7 @@ tags:
   - name: Employees
   - name: Leave
   - name: Attendance
+  - name: Roles
 
 components:
   securitySchemes:
@@ -43,8 +44,43 @@ components:
       properties:
         userId: { type: string }
         employeeId: { type: string }
-        role: { type: string, enum: [ADMIN, MANAGER, EMPLOYEE] }
+        organizationId: { type: string }
+        role: { type: string, enum: [ADMIN, MANAGER, EMPLOYEE], description: "Clerk org role. ADMIN always holds every permission." }
         name: { type: string }
+        accessRole:
+          type: object
+          nullable: true
+          description: Custom role assigned to this employee; null = permissions follow `role`.
+          properties:
+            id: { type: string }
+            name: { type: string }
+        permissions:
+          type: array
+          description: Effective permissions for this request.
+          items: { $ref: "#/components/schemas/Permission" }
+    Permission:
+      type: string
+      enum: [employees.view_inactive, employees.create, employees.edit, employees.deactivate, leave.approve_team, leave.approve_all, leave.manage_types, holidays.manage, attendance.approve_team, attendance.approve_all, attendance.remote_approve, attendance.report_team, attendance.report_all, attendance.manage_locations, org.structure, org.members]
+    AccessRole:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        permissions:
+          type: array
+          items: { $ref: "#/components/schemas/Permission" }
+        memberCount: { type: integer, description: Active employees holding this role }
+        updatedAt: { type: string, format: date-time }
+    AccessRoleInput:
+      type: object
+      required: [name, permissions]
+      properties:
+        name: { type: string, maxLength: 60 }
+        description: { type: string, nullable: true, maxLength: 200 }
+        permissions:
+          type: array
+          items: { $ref: "#/components/schemas/Permission" }
     Lookup:
       type: object
       properties:
@@ -89,7 +125,10 @@ components:
         code: { type: string }
         name: { type: string }
         paid: { type: boolean }
-        granted: { type: number }
+        unlimited: { type: boolean, description: "Unpaid types (e.g. Loss of Pay) aren't limited by a balance; usage is still tracked." }
+        annualGrant: { type: number, description: "This year's grant, prorated by join date in the join year." }
+        carriedForward: { type: number, description: "Unused days carried in from earlier years (carry-forward types only)." }
+        granted: { type: number, description: "Total entitlement for the year: annualGrant + carriedForward." }
         used: { type: number }
         pending: { type: number }
         available: { type: number }
@@ -461,10 +500,40 @@ paths:
                 annualQuota: { type: number }
                 paid: { type: boolean, default: true }
                 carryForward: { type: boolean, default: false }
+                maxCarryForward: { type: number, nullable: true, default: null, description: "Most unused days carried into the next year (multiple of 0.5); null = no cap. Only used when carryForward is true." }
                 allowHalfDay: { type: boolean, default: true }
       responses:
         "201": { description: Created }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: "Name or code already in use" }
+
+  /api/leave/types/{id}:
+    patch:
+      tags: [Leave]
+      summary: Edit a leave type (leave.manage_types)
+      description: Carry-forward changes apply immediately (carry is computed on read). A new annualQuota applies only to balance years created from now on.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name: { type: string }
+                code: { type: string }
+                annualQuota: { type: number }
+                paid: { type: boolean }
+                carryForward: { type: boolean }
+                maxCarryForward: { type: number, nullable: true }
+                allowHalfDay: { type: boolean }
+      responses:
+        "200": { description: OK }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Name or code already in use" }
 
   /api/leave/balances:
@@ -988,3 +1057,121 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Request is no longer pending" }
+
+  /api/roles:
+    get:
+      tags: [Roles]
+      summary: List custom roles and the active members they can be assigned to (org admins only)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/AccessRole" }
+                  members:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        empCode: { type: string }
+                        name: { type: string }
+                        email: { type: string }
+                        photoUrl: { type: string, nullable: true }
+                        designation: { type: string, nullable: true }
+                        accessRoleId: { type: string, nullable: true }
+                        hasLogin: { type: boolean }
+                        orgRole: { type: string, enum: [ADMIN, MANAGER, EMPLOYEE] }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Roles]
+      summary: Create a role (org admins only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AccessRoleInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccessRole" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: "A role with this name already exists" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/roles/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [Roles]
+      summary: Update a role's name, description or permissions (org admins only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 60 }
+                description: { type: string, nullable: true, maxLength: 200 }
+                permissions:
+                  type: array
+                  items: { $ref: "#/components/schemas/Permission" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccessRole" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "A role with this name already exists" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    delete:
+      tags: [Roles]
+      summary: Delete a role; its members fall back to their org role's default permissions (org admins only)
+      responses:
+        "200": { description: OK }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/employees/{id}/access-role:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    put:
+      tags: [Roles]
+      summary: Assign a role to an employee, or null for default access (org admins only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [accessRoleId]
+              properties:
+                accessRoleId: { type: string, nullable: true }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  accessRoleId: { type: string, nullable: true }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }

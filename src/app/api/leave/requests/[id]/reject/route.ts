@@ -12,7 +12,7 @@ export const POST = route<Ctx>(async (req, { params }) => {
   const { note } = decisionSchema.parse(await req.json().catch(() => ({})));
   const existing = await db.leaveRequest.findUnique({ where: { id } });
   if (!existing) throw notFound("Leave request");
-  await assertCanApprove(session, existing.employeeId);
+  await assertCanApprove(session, existing.employeeId, "leave");
   await rejectLeave(id, session.employeeId, note);
   const full = await db.leaveRequest.findUniqueOrThrow({ where: { id }, include: leaveRequestInclude });
   return NextResponse.json(serializeLeaveRequest(full));

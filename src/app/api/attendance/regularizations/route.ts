@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
-import { requireSession, route, readJson } from "@/lib/authz";
+import { requireSession, route, readJson, can, forbidden } from "@/lib/authz";
 import { regularizationSchema, regularizationListQuery, parseQuery } from "@/lib/validators";
 import { requestRegularization } from "@/lib/attendance";
 import { toIsoDate } from "@/lib/dates";
@@ -33,8 +33,12 @@ export const GET = route(async (req) => {
   const where: Prisma.RegularizationRequestWhereInput = { status: q.status };
   if (q.scope === "mine") {
     where.employeeId = session.employeeId;
-  } else {
+  } else if (can(session, "attendance.approve_all")) {
+    where.employeeId = { not: session.employeeId }; // everyone else's; your own are under "mine"
+  } else if (can(session, "attendance.approve_team")) {
     where.employee = { reportingManagerId: session.employeeId };
+  } else {
+    throw forbidden();
   }
   const items = await db.regularizationRequest.findMany({ where, include, orderBy: { createdAt: "desc" } });
   return NextResponse.json({ items: items.map(serialize) });

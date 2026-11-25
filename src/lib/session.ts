@@ -1,3 +1,5 @@
+import type { Permission } from "./permissions";
+
 export type Role = "ADMIN" | "MANAGER" | "EMPLOYEE";
 
 /** The app-level identity: a Clerk user in a Clerk organization, resolved to that org's Employee row. */
@@ -7,8 +9,13 @@ export type Session = {
   /** Clerk organization id (the tenant). */
   organizationId: string;
   employeeId: string;
+  /** Clerk org role. ADMIN is the organization owner tier and always holds every permission. */
   role: Role;
   name: string;
+  /** Custom access role assigned to this employee, if any (otherwise permissions follow `role`). */
+  accessRole: { id: string; name: string } | null;
+  /** Effective permissions, resolved once per request. */
+  permissions: Permission[];
 };
 
 /**

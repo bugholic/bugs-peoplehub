@@ -103,6 +103,9 @@ model Employee {
   reportingManagerId String?
   reportingManager   Employee?      @relation("Reporting", fields: [reportingManagerId], references: [id], onDelete: SetNull)
   reportees          Employee[]     @relation("Reporting")
+  // Custom access role; null = permissions follow the Clerk org role (see src/lib/permissions.ts#defaultPermissions).
+  accessRoleId       String?
+  accessRole         AccessRole?    @relation(fields: [accessRoleId], references: [id], onDelete: SetNull)
 
   leaveBalances   LeaveBalance[]
   leaveRequests   LeaveRequest[]          @relation("Applicant")
@@ -122,18 +125,20 @@ model Employee {
 }
 
 model LeaveType {
-  id             String         @id @default(cuid())
+  id              String         @id @default(cuid())
   // Tenant key = Clerk organization id. Stamped and filtered by the scoped client in src/lib/db.ts.
-  organizationId String         @default("")
-  name           String
-  code           String
-  annualQuota    Decimal        @db.Decimal(5, 1)
-  paid           Boolean        @default(true)
-  carryForward   Boolean        @default(false)
-  allowHalfDay   Boolean        @default(true)
-  active         Boolean        @default(true)
-  balances       LeaveBalance[]
-  requests       LeaveRequest[]
+  organizationId  String         @default("")
+  name            String
+  code            String
+  annualQuota     Decimal        @db.Decimal(5, 1)
+  paid            Boolean        @default(true)
+  carryForward    Boolean        @default(false)
+  // Most unused days that carry into the next year (carryForward types only); null = no cap.
+  maxCarryForward Decimal?       @db.Decimal(5, 1)
+  allowHalfDay    Boolean        @default(true)
+  active          Boolean        @default(true)
+  balances        LeaveBalance[]
+  requests        LeaveRequest[]
 
   @@unique([organizationId, name])
   @@unique([organizationId, code])
@@ -295,6 +300,25 @@ model RemoteWorkRequest {
 }
 
 /**
+ * Admin-defined role: a named set of permission keys from src/lib/permissions.ts,
+ * assigned to employees via Employee.accessRoleId. Clerk org admins always have every permission.
+ */
+model AccessRole {
+  id             String     @id @default(cuid())
+  // Tenant key = Clerk organization id. Stamped and filtered by the scoped client in src/lib/db.ts.
+  organizationId String     @default("")
+  name           String
+  description    String?
+  permissions    String[]
+  employees      Employee[]
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+/**
  * One row per Clerk organization that has used the app. Holds the employee-code prefix
  * (fixed when first created, so renaming the org never changes existing codes) and the
  * atomic serial counter. Not tenant-scoped: `id` is the Clerk org id.
@@ -304,5 +328,7 @@ model Organization {
   name      String
   empPrefix String
   empSerial Int      @default(0)
+  // Company banner on profile headers; served by /api/organization/banner (?v= busts cache). null = default art.
+  bannerUrl String?
   createdAt DateTime @default(now())
 }

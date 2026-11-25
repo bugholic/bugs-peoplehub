@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requireSession, route, readJson, notFound, forbidden, isAdmin } from "@/lib/authz";
+import { requireSession, requirePermission, route, readJson, notFound, forbidden, can } from "@/lib/authz";
 import { employeeUpdateSchema, selfUpdateSchema } from "@/lib/validators";
 import { toIsoDate } from "@/lib/dates";
 import { assertRefsInOrg } from "@/lib/refs";
@@ -44,7 +44,7 @@ export const PATCH = route<Ctx>(async (req, { params }) => {
   const existing = await db.employee.findUnique({ where: { id } });
   if (!existing) throw notFound("Employee");
 
-  const admin = isAdmin(session);
+  const admin = can(session, "employees.edit");
   if (!admin && id !== session.employeeId) throw forbidden();
 
   const body = await readJson(req);
@@ -66,7 +66,7 @@ export const PATCH = route<Ctx>(async (req, { params }) => {
 });
 
 export const DELETE = route<Ctx>(async (_req, { params }) => {
-  await requireSession("ADMIN");
+  await requirePermission("employees.deactivate");
   const { id } = await params;
   const existing = await db.employee.findUnique({ where: { id } });
   if (!existing) throw notFound("Employee");

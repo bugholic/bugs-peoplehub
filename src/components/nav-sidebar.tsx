@@ -4,8 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { OrganizationSwitcher, useClerk } from "@clerk/nextjs";
 import type { Session } from "@/lib/session";
+import type { Permission } from "@/lib/permissions";
 import { Avatar, cx } from "@/components/ui";
-import { BriefcaseIcon, ClockIcon, HomeIcon, LogOutIcon, OrgIcon, PlaneIcon, UsersIcon } from "@/components/icons";
+import { BriefcaseIcon, ClockIcon, HomeIcon, LogOutIcon, OrgIcon, PlaneIcon, ShieldIcon, UsersIcon } from "@/components/icons";
 
 const LINKS = [
   { href: "/dashboard", label: "Dashboard", icon: HomeIcon },
@@ -15,10 +16,12 @@ const LINKS = [
   { href: "/attendance", label: "Attendance", icon: ClockIcon },
 ];
 
-// Organization management is admin-only (pages and APIs enforce it too; this just hides the links).
-const ADMIN_LINKS = [
-  { href: "/settings", label: "Structure", icon: BriefcaseIcon },
-  { href: "/organization", label: "Organization", icon: UsersIcon },
+// Shown only to people allowed to use them (pages and APIs enforce it too; this just hides the links).
+// `perm: "ADMIN"` = Clerk org admins only.
+const ADMIN_LINKS: { href: string; label: string; icon: typeof HomeIcon; perm: Permission | "ADMIN" }[] = [
+  { href: "/settings", label: "Structure", icon: BriefcaseIcon, perm: "org.structure" },
+  { href: "/organization", label: "Organization", icon: UsersIcon, perm: "org.members" },
+  { href: "/roles", label: "Roles & permissions", icon: ShieldIcon, perm: "ADMIN" },
 ];
 
 const ROLE_LABEL = { ADMIN: "Admin", MANAGER: "Manager", EMPLOYEE: "Employee" } as const;
@@ -41,7 +44,10 @@ export function NavSidebar({ session }: { session: Session }) {
 
   const logout = () => signOut({ redirectUrl: "/sign-in" });
 
-  const links = session.role === "ADMIN" ? [...LINKS, ...ADMIN_LINKS] : LINKS;
+  const links = [
+    ...LINKS,
+    ...ADMIN_LINKS.filter((l) => (l.perm === "ADMIN" ? session.role === "ADMIN" : session.permissions.includes(l.perm))),
+  ];
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
 
   return (
@@ -77,7 +83,7 @@ export function NavSidebar({ session }: { session: Session }) {
             <Avatar name={session.name} size="md" />
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold">{session.name}</p>
-              <p className="text-xs text-white/50">{ROLE_LABEL[session.role]}</p>
+              <p className="text-xs text-white/50">{session.accessRole?.name ?? ROLE_LABEL[session.role]}</p>
             </div>
           </div>
           <button

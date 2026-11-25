@@ -20,7 +20,7 @@ type LeaveRequest = {
   createdAt: string;
 };
 
-type Me = { employeeId: string; role: "ADMIN" | "MANAGER" | "EMPLOYEE" };
+type Me = { employeeId: string; permissions: string[] };
 
 const TABS = ["Apply", "My requests", "Approvals", "Admin"] as const;
 
@@ -32,8 +32,12 @@ export default function LeavePage() {
     apiFetch<{ session: Me }>("/api/me").then((r) => setMe(r.session)).catch(() => {});
   }, []);
 
-  const isApprover = me?.role === "ADMIN" || me?.role === "MANAGER";
-  const isAdmin = me?.role === "ADMIN";
+  const can = (p: string) => me?.permissions.includes(p) ?? false;
+  const canApproveAll = can("leave.approve_all");
+  const isApprover = can("leave.approve_team") || canApproveAll;
+  const canTypes = can("leave.manage_types");
+  const canHolidays = can("holidays.manage");
+  const isAdmin = canTypes || canHolidays;
   const visibleTabs = TABS.filter((t) => (t === "Approvals" ? isApprover : t === "Admin" ? isAdmin : true));
 
   return (
@@ -43,8 +47,8 @@ export default function LeavePage() {
 
       {tab === "Apply" && <ApplyTab />}
       {tab === "My requests" && <MyRequestsTab />}
-      {tab === "Approvals" && isApprover && <ApprovalsTab isAdmin={isAdmin} />}
-      {tab === "Admin" && isAdmin && <AdminTab />}
+      {tab === "Approvals" && isApprover && <ApprovalsTab canApproveAll={canApproveAll} canTeam={can("leave.approve_team")} />}
+      {tab === "Admin" && isAdmin && <AdminTab canTypes={canTypes} canHolidays={canHolidays} />}
     </div>
   );
 }
@@ -216,8 +220,9 @@ function MyRequestsTab() {
   );
 }
 
-function ApprovalsTab({ isAdmin }: { isAdmin: boolean }) {
-  const [scope, setScope] = useState<"team" | "all">("team");
+function ApprovalsTab({ canApproveAll, canTeam }: { canApproveAll: boolean; canTeam: boolean }) {
+  // Org-wide approvers without the team permission start on (and only see) "Everyone".
+  const [scope, setScope] = useState<"team" | "all">(canTeam || !canApproveAll ? "team" : "all");
   const [items, setItems] = useState<LeaveRequest[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -251,7 +256,7 @@ function ApprovalsTab({ isAdmin }: { isAdmin: boolean }) {
 
   return (
     <div>
-      {isAdmin && (
+      {canApproveAll && (
         <div className="mb-5">
           <Segmented
             options={[
@@ -300,17 +305,104 @@ function ApprovalsTab({ isAdmin }: { isAdmin: boolean }) {
   );
 }
 
-function AdminTab() {
-  const [types, setTypes] = useState<LeaveType[]>([]);
+// Decimal columns arrive as JSON strings from Prisma.
+type AdminLeaveType = LeaveType & {
+  annualQuota: string | number;
+  paid: boolean;
+  carryForward: boolean;
+  maxCarryForward: string | number | null;
+};
+
+/** Form state; maxCarryForward "" = no cap. */
+type TypeDraft = {
+  name: string;
+  code: string;
+  annualQuota: number;
+  paid: boolean;
+  carryForward: boolean;
+  maxCarryForward: string;
+  allowHalfDay: boolean;
+};
+
+const EMPTY_TYPE: TypeDraft = { name: "", code: "", annualQuota: 12, paid: true, carryForward: false, maxCarryForward: "", allowHalfDay: true };
+
+const toDraft = (t: AdminLeaveType): TypeDraft => ({
+  name: t.name,
+  code: t.code,
+  annualQuota: Number(t.annualQuota),
+  paid: t.paid,
+  carryForward: t.carryForward,
+  maxCarryForward: t.maxCarryForward === null ? "" : String(Number(t.maxCarryForward)),
+  allowHalfDay: t.allowHalfDay,
+});
+
+const toPayload = (d: TypeDraft) => ({
+  ...d,
+  maxCarryForward: d.carryForward && d.maxCarryForward !== "" ? Number(d.maxCarryForward) : null,
+});
+
+function typeSummary(t: AdminLeaveType) {
+  const parts = [`${Number(t.annualQuota)} days/yr`, t.paid ? "Paid" : "Unpaid"];
+  if (t.carryForward) {
+    parts.push(t.maxCarryForward === null ? "Carry forward: all" : `Carry forward: up to ${Number(t.maxCarryForward)}`);
+  }
+  if (!t.allowHalfDay) parts.push("No half days");
+  return parts.join(" · ");
+}
+
+function Check({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex cursor-pointer items-center gap-2 text-sm text-ink-2">
+      <input type="checkbox" className="size-4 accent-[var(--color-brand)]" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      {label}
+    </label>
+  );
+}
+
+/** Shared by the add form and the inline editor. */
+function LeaveTypeFields({ draft, onChange }: { draft: TypeDraft; onChange: (patch: Partial<TypeDraft>) => void }) {
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-3">
+        <Input placeholder="Name, e.g. Sick leave" aria-label="Name" required value={draft.name} onChange={(e) => onChange({ name: e.target.value })} />
+        <Input placeholder="Code, e.g. SL" aria-label="Code" required value={draft.code} onChange={(e) => onChange({ code: e.target.value })} />
+      </div>
+      <Field label="Days per year">
+        <Input type="number" min={0} step={0.5} required value={draft.annualQuota} onChange={(e) => onChange({ annualQuota: Number(e.target.value) })} />
+      </Field>
+      <div className="flex flex-wrap gap-x-5 gap-y-2">
+        <Check label="Paid" checked={draft.paid} onChange={(paid) => onChange({ paid })} />
+        <Check label="Allow half days" checked={draft.allowHalfDay} onChange={(allowHalfDay) => onChange({ allowHalfDay })} />
+        <Check label="Carry forward unused days" checked={draft.carryForward} onChange={(carryForward) => onChange({ carryForward })} />
+      </div>
+      {draft.carryForward && (
+        <Field label="Max days carried into next year (blank = no limit)">
+          <Input
+            type="number"
+            min={0}
+            step={0.5}
+            placeholder="No limit"
+            value={draft.maxCarryForward}
+            onChange={(e) => onChange({ maxCarryForward: e.target.value })}
+          />
+        </Field>
+      )}
+    </>
+  );
+}
+
+function AdminTab({ canTypes, canHolidays }: { canTypes: boolean; canHolidays: boolean }) {
+  const [types, setTypes] = useState<AdminLeaveType[]>([]);
   const [holidays, setHolidays] = useState<{ id: string; date: string; name: string }[]>([]);
-  const [typeForm, setTypeForm] = useState({ name: "", code: "", annualQuota: 12, paid: true, carryForward: false, allowHalfDay: true });
+  const [typeForm, setTypeForm] = useState<TypeDraft>(EMPTY_TYPE);
+  const [editing, setEditing] = useState<{ id: string; draft: TypeDraft } | null>(null);
   const [holidayForm, setHolidayForm] = useState({ date: todayIso(), name: "" });
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
     try {
       const [t, h] = await Promise.all([
-        apiFetch<{ items: LeaveType[] }>("/api/leave/types"),
+        apiFetch<{ items: AdminLeaveType[] }>("/api/leave/types", { cache: "no-store" }),
         apiFetch<{ items: { id: string; date: string; name: string }[] }>(`/api/holidays?year=${Number(todayIso().slice(0, 4))}`),
       ]);
       setTypes(t.items);
@@ -328,8 +420,20 @@ function AdminTab() {
   async function addType(e: FormEvent) {
     e.preventDefault();
     try {
-      await apiFetch("/api/leave/types", { method: "POST", body: JSON.stringify(typeForm) });
-      setTypeForm({ name: "", code: "", annualQuota: 12, paid: true, carryForward: false, allowHalfDay: true });
+      await apiFetch("/api/leave/types", { method: "POST", body: JSON.stringify(toPayload(typeForm)) });
+      setTypeForm(EMPTY_TYPE);
+      await load();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
+
+  async function saveType(e: FormEvent) {
+    e.preventDefault();
+    if (!editing) return;
+    try {
+      await apiFetch(`/api/leave/types/${editing.id}`, { method: "PATCH", body: JSON.stringify(toPayload(editing.draft)) });
+      setEditing(null);
       await load();
     } catch (err) {
       setError(errorMessage(err));
@@ -363,33 +467,47 @@ function AdminTab() {
       <Card>
         <CardTitle>Leave types</CardTitle>
         <ul className="divide-y divide-line">
-          {types.map((t) => (
-            <li key={t.id} className="flex items-center justify-between py-2.5 text-sm">
-              <span className="font-medium text-ink">{t.name}</span>
-              <span className="rounded-md bg-surface-2 px-2 py-0.5 font-mono text-xs text-ink-2 ring-1 ring-inset ring-line">{t.code}</span>
-            </li>
-          ))}
+          {types.map((t) =>
+            editing?.id === t.id ? (
+              <li key={t.id} className="py-3">
+                <form onSubmit={saveType} className="flex flex-col gap-3 rounded-xl bg-surface-2 p-4 ring-1 ring-inset ring-line">
+                  <LeaveTypeFields
+                    draft={editing.draft}
+                    onChange={(patch) => setEditing((ed) => (ed ? { ...ed, draft: { ...ed.draft, ...patch } } : ed))}
+                  />
+                  <p className="text-xs text-ink-3">A new days-per-year value applies to balance years created from now on.</p>
+                  <div className="flex gap-2">
+                    <Button type="submit" size="sm">Save</Button>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
+                  </div>
+                </form>
+              </li>
+            ) : (
+              <li key={t.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                <span className="min-w-0">
+                  <span className="block font-medium text-ink">{t.name}</span>
+                  <span className="block text-xs text-ink-3">{typeSummary(t)}</span>
+                </span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <span className="rounded-md bg-surface-2 px-2 py-0.5 font-mono text-xs text-ink-2 ring-1 ring-inset ring-line">{t.code}</span>
+                  {canTypes && (
+                    <Button size="sm" variant="ghost" onClick={() => setEditing({ id: t.id, draft: toDraft(t) })} aria-label={`Edit ${t.name}`}>
+                      Edit
+                    </Button>
+                  )}
+                </span>
+              </li>
+            ),
+          )}
         </ul>
-        <form onSubmit={addType} className="mt-5 flex flex-col gap-3 rounded-xl bg-surface-2 p-4 ring-1 ring-inset ring-line">
+        {canTypes && <form onSubmit={addType} className="mt-5 flex flex-col gap-3 rounded-xl bg-surface-2 p-4 ring-1 ring-inset ring-line">
           <p className="text-[13px] font-semibold text-ink-2">Add a leave type</p>
-          <div className="grid grid-cols-2 gap-3">
-            <Input placeholder="Name, e.g. Sick leave" required value={typeForm.name} onChange={(e) => setTypeForm((f) => ({ ...f, name: e.target.value }))} />
-            <Input placeholder="Code, e.g. SL" required value={typeForm.code} onChange={(e) => setTypeForm((f) => ({ ...f, code: e.target.value }))} />
-          </div>
-          <Field label="Days per year">
-            <Input
-              type="number"
-              min={0}
-              required
-              value={typeForm.annualQuota}
-              onChange={(e) => setTypeForm((f) => ({ ...f, annualQuota: Number(e.target.value) }))}
-            />
-          </Field>
+          <LeaveTypeFields draft={typeForm} onChange={(patch) => setTypeForm((f) => ({ ...f, ...patch }))} />
           <Button type="submit" size="sm" className="self-start">
             <PlusIcon size={14} />
             Add leave type
           </Button>
-        </form>
+        </form>}
       </Card>
 
       <Card>
@@ -402,14 +520,14 @@ function AdminTab() {
               <li key={h.id} className="flex items-center gap-3">
                 <DateTile iso={h.date} className="size-11" />
                 <span className="flex-1 text-sm font-medium text-ink">{h.name}</span>
-                <Button size="sm" variant="ghost" onClick={() => removeHoliday(h.id)} className="text-rose-600 dark:text-rose-400" aria-label={`Remove ${h.name}`}>
+                {canHolidays && <Button size="sm" variant="ghost" onClick={() => removeHoliday(h.id)} className="text-rose-600 dark:text-rose-400" aria-label={`Remove ${h.name}`}>
                   Remove
-                </Button>
+                </Button>}
               </li>
             ))}
           </ul>
         )}
-        <form onSubmit={addHoliday} className="mt-5 flex flex-col gap-3 rounded-xl bg-surface-2 p-4 ring-1 ring-inset ring-line">
+        {canHolidays && <form onSubmit={addHoliday} className="mt-5 flex flex-col gap-3 rounded-xl bg-surface-2 p-4 ring-1 ring-inset ring-line">
           <p className="text-[13px] font-semibold text-ink-2">Add a holiday</p>
           <div className="grid grid-cols-[auto_1fr] gap-3">
             <Input type="date" required value={holidayForm.date} onChange={(e) => setHolidayForm((f) => ({ ...f, date: e.target.value }))} aria-label="Holiday date" />
@@ -419,7 +537,7 @@ function AdminTab() {
             <PlusIcon size={14} />
             Add holiday
           </Button>
-        </form>
+        </form>}
       </Card>
     </div>
   );

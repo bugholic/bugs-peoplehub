@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, errorMessage } from "@/lib/api-client";
 import { Alert, Button, Card, CardTitle, Field, Input, PageHeader, Select } from "@/components/ui";
+import { PhoneInput } from "@/components/phone-input";
 
 type Lookups = {
   departments: { id: string; name: string }[];
@@ -80,7 +81,7 @@ export default function NewEmployeePage() {
           <Input required value={form.lastName} onChange={(e) => set("lastName", e.target.value)} />
         </Field>
         <Field label="Phone">
-          <Input value={form.phone} onChange={(e) => set("phone", e.target.value)} />
+          <PhoneInput value={form.phone} onChange={(v) => set("phone", v)} />
         </Field>
         <Field label="Join date">
           <Input type="date" required value={form.joinDate} onChange={(e) => set("joinDate", e.target.value)} />

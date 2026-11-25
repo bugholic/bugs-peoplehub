@@ -22,13 +22,13 @@ export default function EmployeesPage() {
   const [items, setItems] = useState<Employee[]>([]);
   const [total, setTotal] = useState(0);
   const [q, setQ] = useState("");
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [canCreate, setCanCreate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    apiFetch<{ session: { role: string } }>("/api/me")
-      .then((me) => setIsAdmin(me.session.role === "ADMIN"))
+    apiFetch<{ session: { permissions: string[] } }>("/api/me")
+      .then((me) => setCanCreate(me.session.permissions.includes("employees.create")))
       .catch(() => {});
   }, []);
 
@@ -52,7 +52,7 @@ export default function EmployeesPage() {
         title="Employees"
         description={`${total} active ${total === 1 ? "person" : "people"} in the directory`}
         actions={
-          isAdmin && (
+          canCreate && (
             <Link href="/employees/new">
               <Button>
                 <PlusIcon size={16} />
