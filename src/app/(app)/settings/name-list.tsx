@@ -57,13 +57,13 @@ export function NameList({ title, endpoint }: { title: string; endpoint: string 
       </form>
       {error && <Alert>{error}</Alert>}
       {items && items.length === 0 && <EmptyState>Nothing here yet.</EmptyState>}
-      <ul className="divide-y divide-line">
+      <ul className="divide-y divide-border">
         {items?.map((i) => (
           <li key={i.id} className="flex items-center justify-between py-2.5 text-sm">
             <span>{i.name}</span>
-            <button onClick={() => remove(i.id)} className="text-xs font-medium text-ink-3 hover:text-red-600">
+            <Button variant="ghost" size="sm" onClick={() => remove(i.id)} className="text-muted-foreground hover:text-destructive">
               Remove
-            </button>
+            </Button>
           </li>
         ))}
       </ul>

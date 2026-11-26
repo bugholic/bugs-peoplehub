@@ -4,11 +4,14 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useParams } from "next/navigation";
 import { apiFetch, errorMessage, invalidateApiCache } from "@/lib/api-client";
-import { Alert, Avatar, Badge, Button, Card, CardTitle, Field, Spinner } from "@/components/ui";
-import { BriefcaseIcon, CalendarIcon, ChevronLeftIcon, MailIcon, PhoneIcon, PinIcon, UsersIcon } from "@/components/icons";
+import { Alert, Avatar, Badge, Button, Card, CardTitle, Field, Select, Spinner } from "@/components/ui";
+import { BriefcaseIcon, CalendarIcon, ClockIcon, ChevronLeftIcon, MailIcon, PhoneIcon, PinIcon, UsersIcon } from "@/components/icons";
 import { formatDate } from "@/lib/dates";
 import { formatPhone } from "@/lib/phone";
 import { PhoneInput } from "@/components/phone-input";
+import { LeaveBalancesCard } from "./leave-balances";
+import { ProfileSections } from "./profile-sections";
+import { useConfirm } from "@/components/confirm-dialog";
 
 type Lookup = { id: string; name: string };
 type Employee = {
@@ -24,6 +27,7 @@ type Employee = {
   department: Lookup | null;
   designation: Lookup | null;
   location: Lookup | null;
+  shift: { id: string; name: string; startTime: string; endTime: string } | null;
   reportingManager: { id: string; firstName: string; lastName: string } | null;
   hasLogin: boolean;
 };
@@ -66,8 +70,17 @@ export default function EmployeeDetailPage() {
   const canEdit = me?.permissions.includes("employees.edit") ?? false;
   const canDeactivate = me?.permissions.includes("employees.deactivate") ?? false;
   const isSelf = me?.employeeId === id;
+  const perms = me?.permissions ?? [];
+  const canAdjustLeave = perms.includes("leave.adjust_balances");
+  // Mirrors the API's rule (src/app/api/leave/balances/route.ts): self, org-wide leave rights, or the direct manager.
+  const canViewLeave =
+    isSelf ||
+    canAdjustLeave ||
+    perms.includes("leave.approve_all") ||
+    (perms.includes("leave.approve_team") && employee?.reportingManager?.id === me?.employeeId);
 
   const fileRef = useRef<HTMLInputElement>(null);
+  const [confirm, confirmDialog] = useConfirm();
 
   async function uploadPhoto(file: File | undefined) {
     if (!file) return;
@@ -107,6 +120,28 @@ export default function EmployeeDetailPage() {
     }
   }
 
+  const [shifts, setShifts] = useState<{ id: string; name: string; startTime: string; endTime: string; isDefault: boolean }[] | null>(null);
+  useEffect(() => {
+    if (!canEdit) return;
+    apiFetch<{ shifts: NonNullable<typeof shifts> }>("/api/lookups").then((r) => setShifts(r.shifts)).catch(() => {});
+  }, [canEdit]);
+  const defaultShift = shifts?.find((s) => s.isDefault);
+
+  async function saveShift(shiftId: string) {
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const updated = await apiFetch<Employee>(`/api/employees/${id}`, { method: "PATCH", body: JSON.stringify({ shiftId: shiftId || null }) });
+      setEmployee((e) => (e ? { ...e, shift: updated.shift } : e));
+      setSuccess("Shift updated. It applies from the next check-in.");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function savePhone() {
     setSaving(true);
     setError(null);
@@ -123,7 +158,7 @@ export default function EmployeeDetailPage() {
   }
 
   async function deactivate() {
-    if (!confirm("Deactivate this employee? They will no longer be able to sign in.")) return;
+    if (!(await confirm({ title: `Deactivate ${employee?.firstName ?? "this employee"}?`, description: "They will no longer be able to sign in. Their records are kept.", confirmLabel: "Deactivate", destructive: true }))) return;
     setSaving(true);
     try {
       await apiFetch(`/api/employees/${id}`, { method: "DELETE" });
@@ -142,13 +177,14 @@ export default function EmployeeDetailPage() {
 
   return (
     <div>
-      <Link href="/employees" className="mb-5 inline-flex items-center gap-1 text-sm font-medium text-ink-3 hover:text-ink">
+      {confirmDialog}
+      <Link href="/employees" className="mb-5 inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground">
         <ChevronLeftIcon size={16} />
         All employees
       </Link>
 
       {/* Profile header */}
-      <div className="mb-6 overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
+      <div className="mb-6 overflow-hidden rounded-2xl border border-border bg-card shadow-xs">
         <div className="relative h-28 overflow-hidden bg-night sm:h-36">
           {bannerUrl ? (
             // Served by our auth-checked API route (private bucket), so next/image's optimizer can't fetch it.
@@ -156,20 +192,20 @@ export default function EmployeeDetailPage() {
             <img src={bannerUrl} alt="" className="size-full object-cover" />
           ) : (
             <>
-              <div aria-hidden className="absolute -right-10 -top-16 size-56 rounded-full bg-brand/45 blur-3xl" />
+              <div aria-hidden className="absolute -right-10 -top-16 size-56 rounded-full bg-primary/45 blur-3xl" />
               <div aria-hidden className="absolute left-1/3 top-6 size-24 rounded-full bg-marigold/25 blur-2xl" />
             </>
           )}
         </div>
-        {/* relative: paints above the positioned banner; only the avatar overlaps it, the text stays below on bg-surface */}
+        {/* relative: paints above the positioned banner; only the avatar overlaps it, the text stays below on bg-card */}
         <div className="relative flex flex-wrap items-end justify-between gap-4 px-6 pb-6">
           <div className="flex items-start gap-4">
-            <Avatar name={fullName} size="xl" className="-mt-10 ring-4 ring-surface" photoUrl={employee.photoUrl} />
+            <Avatar name={fullName} size="xl" className="-mt-10 ring-4 ring-card" photoUrl={employee.photoUrl} />
             <div className="pt-3">
-              <h1 className="font-display text-2xl font-semibold tracking-tight text-ink sm:text-3xl">{fullName}</h1>
-              <p className="text-ink-2">
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">{fullName}</h1>
+              <p className="text-foreground/80">
                 {employee.designation?.name ?? "No designation"}
-                {employee.department && <span className="text-ink-3"> in {employee.department.name}</span>}
+                {employee.department && <span className="text-muted-foreground"> in {employee.department.name}</span>}
               </p>
             </div>
           </div>
@@ -205,15 +241,41 @@ export default function EmployeeDetailPage() {
           <CardTitle>Details</CardTitle>
           <dl className="grid gap-x-6 gap-y-5 sm:grid-cols-2">
             <Detail icon={<BriefcaseIcon size={17} />} label="Employee code" value={<span className="font-mono">{employee.empCode}</span>} />
-            <Detail icon={<MailIcon size={17} />} label="Email" value={<a href={`mailto:${employee.email}`} className="hover:text-brand-ink">{employee.email}</a>} />
-            <Detail icon={<PhoneIcon size={17} />} label="Phone" value={employee.phone ? <a href={`tel:${employee.phone}`} className="hover:text-brand-ink">{formatPhone(employee.phone)}</a> : "Not added"} />
+            <Detail icon={<MailIcon size={17} />} label="Email" value={<a href={`mailto:${employee.email}`} className="hover:text-accent-foreground">{employee.email}</a>} />
+            <Detail icon={<PhoneIcon size={17} />} label="Phone" value={employee.phone ? <a href={`tel:${employee.phone}`} className="hover:text-accent-foreground">{formatPhone(employee.phone)}</a> : "Not added"} />
             <Detail icon={<PinIcon size={17} />} label="Location" value={employee.location?.name ?? "—"} />
+            <Detail
+              icon={<ClockIcon size={17} />}
+              label="Shift"
+              value={
+                canEdit && shifts?.length ? (
+                  <Select
+                    aria-label="Shift"
+                    disabled={saving}
+                    value={employee.shift?.id ?? ""}
+                    onChange={(e) => saveShift(e.target.value)}
+                    className="mt-1 h-9 max-w-64"
+                  >
+                    <option value="">{defaultShift ? `Default (${defaultShift.name})` : "No shift"}</option>
+                    {shifts.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} · {s.startTime}–{s.endTime}
+                      </option>
+                    ))}
+                  </Select>
+                ) : employee.shift ? (
+                  `${employee.shift.name} · ${employee.shift.startTime}–${employee.shift.endTime}`
+                ) : (
+                  "Default"
+                )
+              }
+            />
             <Detail
               icon={<UsersIcon size={17} />}
               label="Reports to"
               value={
                 employee.reportingManager ? (
-                  <Link href={`/employees/${employee.reportingManager.id}`} className="hover:text-brand-ink">
+                  <Link href={`/employees/${employee.reportingManager.id}`} className="hover:text-accent-foreground">
                     {employee.reportingManager.firstName} {employee.reportingManager.lastName}
                   </Link>
                 ) : (
@@ -237,6 +299,10 @@ export default function EmployeeDetailPage() {
             </Button>
           </Card>
         )}
+
+        <ProfileSections employeeId={employee.id} />
+
+        {canViewLeave && <LeaveBalancesCard employeeId={employee.id} canAdjust={canAdjustLeave && !isSelf} />}
       </div>
     </div>
   );
@@ -245,10 +311,10 @@ export default function EmployeeDetailPage() {
 function Detail({ icon, label, value }: { icon: ReactNode; label: string; value: ReactNode }) {
   return (
     <div className="flex gap-3">
-      <span className="mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-ink-3 ring-1 ring-inset ring-line">{icon}</span>
+      <span className="mt-0.5 inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground ring-1 ring-inset ring-border">{icon}</span>
       <div className="min-w-0">
-        <dt className="text-[13px] text-ink-3">{label}</dt>
-        <dd className="truncate font-medium text-ink">{value}</dd>
+        <dt className="text-[13px] text-muted-foreground">{label}</dt>
+        <dd className="truncate font-medium text-foreground">{value}</dd>
       </div>
     </div>
   );

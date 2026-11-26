@@ -2,7 +2,7 @@ import { clerkClient } from "@clerk/nextjs/server";
 import type { AccessRole } from "@/generated/prisma/client";
 import { db } from "./db";
 import { conflict } from "./errors";
-import { sanitizePermissions } from "./permissions";
+import { effectivePermissions, sanitizePermissions, type Permission } from "./permissions";
 import { roleFromOrgRole, type Role } from "./session";
 
 export function serializeAccessRole(r: AccessRole & { _count?: { employees: number } }) {
@@ -39,4 +39,22 @@ export async function clerkRolesByUser(organizationId: string): Promise<Map<stri
     console.error("Could not load Clerk memberships", e);
   }
   return roles;
+}
+
+/**
+ * Ids of active, signed-up employees who effectively hold `permission` (same rule as
+ * src/lib/authz.ts via effectivePermissions). One Clerk API call for org roles; if it
+ * fails, Clerk admins without a custom role are missed (best effort, for notifications).
+ */
+export async function employeesWithPermission(organizationId: string, permission: Permission): Promise<string[]> {
+  const [employees, roles] = await Promise.all([
+    db.employee.findMany({
+      where: { status: "ACTIVE", clerkUserId: { not: null } },
+      select: { id: true, clerkUserId: true, accessRole: { select: { permissions: true } } },
+    }),
+    clerkRolesByUser(organizationId),
+  ]);
+  return employees
+    .filter((e) => effectivePermissions(roles.get(e.clerkUserId!) ?? "EMPLOYEE", e.accessRole?.permissions).includes(permission))
+    .map((e) => e.id);
 }

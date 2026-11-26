@@ -32,6 +32,13 @@ enum WorkMode {
   HYBRID
 }
 
+// How much of a working day the worked time earns under the shift (null = no shift rules applied).
+enum DayCredit {
+  FULL
+  HALF
+  SHORT
+}
+
 enum AttendanceStatus {
   PRESENT
   ABSENT
@@ -72,6 +79,10 @@ model Location {
   latitude       Float?
   longitude      Float?
   radiusMeters   Int                 @default(200)
+  // IANA zone for people based here (e.g. "Europe/London"); null = the organization's.
+  timeZone       String?
+  // Week-off pattern (src/lib/week-off.ts), e.g. "0,6#2,6#4"; null = the organization's.
+  weekOff        String?
   employees      Employee[]
   holidays       Holiday[]
   sessions       AttendanceSession[]
@@ -106,17 +117,27 @@ model Employee {
   // Custom access role; null = permissions follow the Clerk org role (see src/lib/permissions.ts#defaultPermissions).
   accessRoleId       String?
   accessRole         AccessRole?    @relation(fields: [accessRoleId], references: [id], onDelete: SetNull)
+  // Work shift; null = the organization default shift (Shift.isDefault), if any.
+  shiftId            String?
+  shift              Shift?         @relation(fields: [shiftId], references: [id], onDelete: SetNull)
 
-  leaveBalances   LeaveBalance[]
-  leaveRequests   LeaveRequest[]          @relation("Applicant")
-  leaveApprovals  LeaveRequest[]          @relation("Approver")
-  attendance      AttendanceLog[]
-  regularizations RegularizationRequest[] @relation("RegApplicant")
-  regApprovals    RegularizationRequest[] @relation("RegApprover")
-  remoteRequests  RemoteWorkRequest[]     @relation("RemoteApplicant")
-  remoteApprovals RemoteWorkRequest[]     @relation("RemoteApprover")
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
+  leaveBalances          LeaveBalance[]
+  leaveRequests          LeaveRequest[]           @relation("Applicant")
+  leaveApprovals         LeaveRequest[]           @relation("Approver")
+  attendance             AttendanceLog[]
+  regularizations        RegularizationRequest[]  @relation("RegApplicant")
+  regApprovals           RegularizationRequest[]  @relation("RegApprover")
+  remoteRequests         RemoteWorkRequest[]      @relation("RemoteApplicant")
+  remoteApprovals        RemoteWorkRequest[]      @relation("RemoteApprover")
+  balanceAdjustments     LeaveBalanceAdjustment[] @relation("AdjustedEmployee")
+  balanceAdjustmentsMade LeaveBalanceAdjustment[] @relation("AdjustedBy")
+  notifications          Notification[]           @relation("NotificationRecipient")
+  notificationsSent      Notification[]           @relation("NotificationActor")
+  profile                EmployeeProfile?
+  attendanceEdits        AttendanceEdit[]         @relation("AttendanceEdited")
+  attendanceEditsMade    AttendanceEdit[]         @relation("AttendanceEditor")
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
 
   @@unique([organizationId, empCode])
   @@unique([organizationId, email])
@@ -125,20 +146,21 @@ model Employee {
 }
 
 model LeaveType {
-  id              String         @id @default(cuid())
+  id              String                   @id @default(cuid())
   // Tenant key = Clerk organization id. Stamped and filtered by the scoped client in src/lib/db.ts.
-  organizationId  String         @default("")
+  organizationId  String                   @default("")
   name            String
   code            String
-  annualQuota     Decimal        @db.Decimal(5, 1)
-  paid            Boolean        @default(true)
-  carryForward    Boolean        @default(false)
+  annualQuota     Decimal                  @db.Decimal(5, 1)
+  paid            Boolean                  @default(true)
+  carryForward    Boolean                  @default(false)
   // Most unused days that carry into the next year (carryForward types only); null = no cap.
-  maxCarryForward Decimal?       @db.Decimal(5, 1)
-  allowHalfDay    Boolean        @default(true)
-  active          Boolean        @default(true)
+  maxCarryForward Decimal?                 @db.Decimal(5, 1)
+  allowHalfDay    Boolean                  @default(true)
+  active          Boolean                  @default(true)
   balances        LeaveBalance[]
   requests        LeaveRequest[]
+  adjustments     LeaveBalanceAdjustment[]
 
   @@unique([organizationId, name])
   @@unique([organizationId, code])
@@ -162,27 +184,66 @@ model LeaveBalance {
 }
 
 model LeaveRequest {
-  id             String        @id @default(cuid())
+  id                 String        @id @default(cuid())
   // Tenant key = Clerk organization id. Stamped and filtered by the scoped client in src/lib/db.ts.
-  organizationId String        @default("")
-  employeeId     String
-  employee       Employee      @relation("Applicant", fields: [employeeId], references: [id], onDelete: Cascade)
-  leaveTypeId    String
-  leaveType      LeaveType     @relation(fields: [leaveTypeId], references: [id])
-  fromDate       DateTime      @db.Date
-  toDate         DateTime      @db.Date
-  dayPart        DayPart       @default(FULL)
-  days           Decimal       @db.Decimal(5, 1)
-  reason         String
-  status         RequestStatus @default(PENDING)
-  approverId     String?
-  approver       Employee?     @relation("Approver", fields: [approverId], references: [id], onDelete: SetNull)
-  decisionNote   String?
-  decidedAt      DateTime?
-  createdAt      DateTime      @default(now())
+  organizationId     String        @default("")
+  employeeId         String
+  employee           Employee      @relation("Applicant", fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveTypeId        String
+  leaveType          LeaveType     @relation(fields: [leaveTypeId], references: [id])
+  fromDate           DateTime      @db.Date
+  toDate             DateTime      @db.Date
+  dayPart            DayPart       @default(FULL)
+  days               Decimal       @db.Decimal(5, 1)
+  // Combined leave: the parts of one application split across leave types share this id
+  // and are approved, rejected and cancelled together. null = a single-type request.
+  groupId            String?
+  reason             String
+  status             RequestStatus @default(PENDING)
+  approverId         String?
+  approver           Employee?     @relation("Approver", fields: [approverId], references: [id], onDelete: SetNull)
+  // When the current approver got it (submit, reassignment or escalation); the escalation clock.
+  approverAssignedAt DateTime      @default(now())
+  decisionNote       String?
+  decidedAt          DateTime?
+  createdAt          DateTime      @default(now())
 
   @@index([employeeId, fromDate])
   @@index([status])
+  @@index([groupId])
+  @@index([organizationId])
+}
+
+enum AdjustmentKind {
+  // Manual credit/debit by someone with leave.adjust_balances
+  MANUAL
+  // Automatic correction when a leave type's annualQuota changed
+  QUOTA_CHANGE
+}
+
+/**
+ * Append-only ledger of changes to LeaveBalance.granted after the row was created.
+ * The balance row holds the running total; each entry records the signed delta, why and who.
+ */
+model LeaveBalanceAdjustment {
+  id             String         @id @default(cuid())
+  // Tenant key = Clerk organization id. Stamped and filtered by the scoped client in src/lib/db.ts.
+  organizationId String         @default("")
+  employeeId     String
+  employee       Employee       @relation("AdjustedEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveTypeId    String
+  leaveType      LeaveType      @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+  year           Int
+  // Signed change to `granted`, in days (e.g. 2 or -0.5)
+  days           Decimal        @db.Decimal(5, 1)
+  kind           AdjustmentKind @default(MANUAL)
+  reason         String
+  // null once the acting employee record is deleted
+  createdById    String?
+  createdBy      Employee?      @relation("AdjustedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime       @default(now())
+
+  @@index([employeeId, year])
   @@index([organizationId])
 }
 
@@ -201,23 +262,33 @@ model Holiday {
 }
 
 model AttendanceLog {
-  id             String              @id @default(cuid())
+  id               String              @id @default(cuid())
   // Tenant key = Clerk organization id. Stamped and filtered by the scoped client in src/lib/db.ts.
-  organizationId String              @default("")
-  employeeId     String
-  employee       Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  date           DateTime            @db.Date
+  organizationId   String              @default("")
+  employeeId       String
+  employee         Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date             DateTime            @db.Date
   // First check-in and last check-out of the day; checkOut is null while a session is open.
-  checkIn        DateTime?
-  checkOut       DateTime?
+  checkIn          DateTime?
+  checkOut         DateTime?
   // total of the day's closed sessions
-  workedMinutes  Int                 @default(0)
-  status         AttendanceStatus    @default(PRESENT)
-  regularized    Boolean             @default(false)
+  workedMinutes    Int                 @default(0)
+  status           AttendanceStatus    @default(PRESENT)
+  regularized      Boolean             @default(false)
+  // A session left open was closed by the daily job (src/lib/jobs/attendance.ts), not by the employee.
+  autoClosed       Boolean             @default(false)
+  // Set (or last changed) directly by an admin edit or CSV import (AttendanceEdit), not by punches.
+  edited           Boolean             @default(false)
   // Summary of the sessions' modes; null for logs created before geofencing, or by regularization
-  workMode       WorkMode?
-  sessions       AttendanceSession[]
-  remoteRequest  RemoteWorkRequest?
+  workMode         WorkMode?
+  // Shift rules (src/lib/shifts.ts), recomputed on every punch and on regularization.
+  // lateMinutes is set from the first check-in; earlyExitMinutes, overtimeMinutes and credit once the day has no open session.
+  lateMinutes      Int                 @default(0)
+  earlyExitMinutes Int                 @default(0)
+  overtimeMinutes  Int                 @default(0)
+  credit           DayCredit?
+  sessions         AttendanceSession[]
+  remoteRequest    RemoteWorkRequest?
 
   @@unique([employeeId, date])
   @@index([organizationId])
@@ -251,21 +322,23 @@ model AttendanceSession {
 }
 
 model RegularizationRequest {
-  id             String        @id @default(cuid())
+  id                 String        @id @default(cuid())
   // Tenant key = Clerk organization id. Stamped and filtered by the scoped client in src/lib/db.ts.
-  organizationId String        @default("")
-  employeeId     String
-  employee       Employee      @relation("RegApplicant", fields: [employeeId], references: [id], onDelete: Cascade)
-  date           DateTime      @db.Date
-  checkIn        DateTime
-  checkOut       DateTime
-  reason         String
-  status         RequestStatus @default(PENDING)
-  approverId     String?
-  approver       Employee?     @relation("RegApprover", fields: [approverId], references: [id], onDelete: SetNull)
-  decisionNote   String?
-  decidedAt      DateTime?
-  createdAt      DateTime      @default(now())
+  organizationId     String        @default("")
+  employeeId         String
+  employee           Employee      @relation("RegApplicant", fields: [employeeId], references: [id], onDelete: Cascade)
+  date               DateTime      @db.Date
+  checkIn            DateTime
+  checkOut           DateTime
+  reason             String
+  status             RequestStatus @default(PENDING)
+  approverId         String?
+  approver           Employee?     @relation("RegApprover", fields: [approverId], references: [id], onDelete: SetNull)
+  // When the current approver got it (submit, reassignment or escalation); the escalation clock.
+  approverAssignedAt DateTime      @default(now())
+  decisionNote       String?
+  decidedAt          DateTime?
+  createdAt          DateTime      @default(now())
 
   @@index([status])
   @@index([organizationId])
@@ -330,5 +403,137 @@ model Organization {
   empSerial Int      @default(0)
   // Company banner on profile headers; served by /api/organization/banner (?v= busts cache). null = default art.
   bannerUrl String?
+  // IANA zone for "today", punches, shifts and times shown (src/lib/timezone.ts); a location can override it.
+  timeZone  String   @default("Asia/Kolkata")
+  // Week-off pattern (src/lib/week-off.ts): "0,6" = every Sunday and Saturday; a location can override it.
+  weekOff   String   @default("0,6")
   createdAt DateTime @default(now())
+}
+
+/**
+ * In-app notification for one employee (src/lib/notifications.ts). `type` is a
+ * NotificationType string; `link` is an app path to open (e.g. "/leave?tab=Approvals").
+ */
+model Notification {
+  id             String    @id @default(cuid())
+  // Tenant key = Clerk organization id. Stamped and filtered by the scoped client in src/lib/db.ts.
+  organizationId String    @default("")
+  recipientId    String
+  recipient      Employee  @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  // Who caused it; null for system events or once that employee is deleted
+  actorId        String?
+  actor          Employee? @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  type           String
+  title          String
+  body           String?
+  link           String?
+  readAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([recipientId, readAt, createdAt])
+  @@index([organizationId])
+}
+
+/**
+ * Work shift: wall-clock start/end in the org time zone (end <= start = overnight), the
+ * grace allowed before a late check-in / early check-out counts, and the worked minutes a
+ * day needs to count as a full or half day. One shift per org may be the default.
+ */
+model Shift {
+  id             String     @id @default(cuid())
+  // Tenant key = Clerk organization id. Stamped and filtered by the scoped client in src/lib/db.ts.
+  organizationId String     @default("")
+  name           String
+  // "HH:mm"
+  startTime      String
+  endTime        String
+  graceMinutes   Int        @default(15)
+  halfDayMinutes Int        @default(240)
+  fullDayMinutes Int        @default(480)
+  isDefault      Boolean    @default(false)
+  employees      Employee[]
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+enum AttendanceEditSource {
+  MANUAL
+  IMPORT
+}
+
+/**
+ * Audit trail of direct attendance changes by admins (src/lib/attendance-admin.ts): one row per
+ * day changed, with the day before and after as { checkIn, checkOut, workedMinutes } (ISO
+ * instants; null = nothing recorded that day). Append-only.
+ */
+model AttendanceEdit {
+  id             String               @id @default(cuid())
+  // Tenant key = Clerk organization id. Stamped and filtered by the scoped client in src/lib/db.ts.
+  organizationId String               @default("")
+  employeeId     String
+  employee       Employee             @relation("AttendanceEdited", fields: [employeeId], references: [id], onDelete: Cascade)
+  date           DateTime             @db.Date
+  before         Json?
+  after          Json?
+  reason         String
+  source         AttendanceEditSource @default(MANUAL)
+  // null once the acting employee record is deleted
+  createdById    String?
+  createdBy      Employee?            @relation("AttendanceEditor", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime             @default(now())
+
+  @@index([employeeId, date])
+  @@index([organizationId])
+}
+
+/**
+ * Extended profile, one row per employee, kept apart from Employee so the directory and the many
+ * queries that load employees never touch it. Enum-like columns are validated in
+ * src/lib/validators.ts (employeeProfileSchema). Who can see or change which group of fields:
+ * src/lib/employee-profile.ts#sectionAccess. Values are stored as entered (not encrypted).
+ */
+model EmployeeProfile {
+  id             String   @id @default(cuid())
+  // Tenant key = Clerk organization id. Stamped and filtered by the scoped client in src/lib/db.ts.
+  organizationId String   @default("")
+  employeeId     String   @unique
+  employee       Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  // personal
+  dateOfBirth      DateTime? @db.Date
+  gender           String?
+  maritalStatus    String?
+  bloodGroup       String?
+  nationality      String?
+  personalEmail    String?
+  currentAddress   String?
+  permanentAddress String?
+
+  // emergency contact
+  emergencyName     String?
+  emergencyRelation String?
+  emergencyPhone    String?
+
+  // employment
+  employmentType   String?
+  probationEndDate DateTime? @db.Date
+  noticePeriodDays Int?
+
+  // identity (sensitive)
+  panNumber      String?
+  aadhaarNumber  String?
+  passportNumber String?
+
+  // bank (sensitive)
+  bankAccountName   String?
+  bankName          String?
+  bankAccountNumber String?
+  bankIfsc          String?
+
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId])
 }

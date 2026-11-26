@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import { requireSession, route, readJson, can, forbidden } from "@/lib/authz";
-import { leaveApplySchema, leaveListQuery, parseQuery } from "@/lib/validators";
-import { applyLeave, leaveRequestInclude, serializeLeaveRequest } from "@/lib/leave";
+import { leaveApplySchema, leaveCombinedApplySchema, leaveListQuery, parseQuery } from "@/lib/validators";
+import { onLeaveSubmitted } from "@/lib/notification-events";
+import { applyCombinedLeave, applyLeave, leaveRequestInclude, serializeLeaveRequest } from "@/lib/leave";
 
 export const GET = route(async (req) => {
   const session = await requireSession();
@@ -17,7 +18,8 @@ export const GET = route(async (req) => {
     where.employeeId = session.employeeId;
   } else if (q.scope === "team") {
     if (!can(session, "leave.approve_team") && !can(session, "leave.approve_all")) throw forbidden();
-    where.employee = { reportingManagerId: session.employeeId };
+    // Direct reports, plus anything routed to you (escalated from a manager below you).
+    where.OR = [{ employee: { reportingManagerId: session.employeeId } }, { approverId: session.employeeId }];
   } else {
     if (!can(session, "leave.approve_all")) throw forbidden();
   }
@@ -32,8 +34,21 @@ export const GET = route(async (req) => {
 
 export const POST = route(async (req) => {
   const session = await requireSession();
-  const body = leaveApplySchema.parse(await readJson(req));
+  const json = await readJson(req);
+  // A body with `parts` is a combined leave (several types over one range); it returns every part.
+  if (json && typeof json === "object" && "parts" in json) {
+    const created = await applyCombinedLeave(session.employeeId, leaveCombinedApplySchema.parse(json));
+    await onLeaveSubmitted(created[0].id, session.organizationId);
+    const parts = await db.leaveRequest.findMany({
+      where: { id: { in: created.map((c) => c.id) } },
+      include: leaveRequestInclude,
+      orderBy: { fromDate: "asc" },
+    });
+    return NextResponse.json({ groupId: created[0].groupId, items: parts.map(serializeLeaveRequest) }, { status: 201 });
+  }
+  const body = leaveApplySchema.parse(json);
   const created = await applyLeave(session.employeeId, body);
+  await onLeaveSubmitted(created.id, session.organizationId);
   const full = await db.leaveRequest.findUniqueOrThrow({ where: { id: created.id }, include: leaveRequestInclude });
   return NextResponse.json(serializeLeaveRequest(full), { status: 201 });
 });

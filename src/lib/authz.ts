@@ -7,7 +7,7 @@ import { db } from "./db";
 import { ApiError, badRequest, forbidden, unauthorized } from "./errors";
 import { provisionEmployee } from "./provision";
 import { roleFromOrgRole, type Role, type Session } from "./session";
-import { ALL_PERMISSIONS, defaultPermissions, sanitizePermissions, type Permission } from "./permissions";
+import { effectivePermissions, type Permission } from "./permissions";
 
 export { ApiError, badRequest, conflict, forbidden, notFound, unauthorized } from "./errors";
 
@@ -40,8 +40,7 @@ const resolve = cache(async (): Promise<Resolved> => {
       : null;
   const role = roleFromOrgRole(orgRole);
   // Clerk org admins can't be narrowed by a custom role, so an org can never lock itself out.
-  const permissions =
-    role === "ADMIN" ? ALL_PERMISSIONS : accessRole ? sanitizePermissions(accessRole.permissions) : defaultPermissions(role);
+  const permissions = effectivePermissions(role, accessRole?.permissions);
 
   return {
     status: "ok",
@@ -109,15 +108,23 @@ export type Module = "leave" | "attendance";
 /** Self always; otherwise `<module>.approve_all`, or `<module>.approve_team` for a direct report. */
 export async function assertCanViewEmployee(s: Session, employeeId: string, module: Module) {
   if (employeeId === s.employeeId || can(s, `${module}.approve_all`)) return;
+  if (module === "attendance" && can(s, "attendance.edit")) return;
   if (can(s, `${module}.approve_team`) && (await isDirectManagerOf(s, employeeId))) return;
   throw forbidden();
 }
 
-/** `<module>.approve_all`, or `<module>.approve_team` for the applicant's direct manager; never your own request. */
-export async function assertCanApprove(s: Session, applicantId: string, module: Module) {
+/**
+ * `<module>.approve_all`; or `<module>.approve_team` for the applicant's direct manager or
+ * the request's assigned approver (e.g. a skip-level manager after escalation, see
+ * src/lib/approvals.ts); never your own request.
+ */
+export async function assertCanApprove(s: Session, applicantId: string, module: Module, assignedApproverId?: string | null) {
   if (applicantId === s.employeeId) throw forbidden("You can't approve your own request");
   if (can(s, `${module}.approve_all`)) return;
-  if (can(s, `${module}.approve_team`) && (await isDirectManagerOf(s, applicantId))) return;
+  if (can(s, `${module}.approve_team`)) {
+    if (assignedApproverId === s.employeeId) return;
+    if (await isDirectManagerOf(s, applicantId)) return;
+  }
   throw forbidden("You don't have permission to decide this request");
 }
 

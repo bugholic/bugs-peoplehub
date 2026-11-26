@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db, dbUnscoped } from "@/lib/db";
 import { requireSession, route } from "@/lib/authz";
+import { employeeTimeZone } from "@/lib/timezone";
 
 export const GET = route(async () => {
   const session = await requireSession();
@@ -18,6 +19,15 @@ export const GET = route(async () => {
       reportingManagerId: true,
     },
   });
-  const org = await dbUnscoped.organization.findUnique({ where: { id: session.organizationId }, select: { bannerUrl: true } });
-  return NextResponse.json({ session, employee, organization: { bannerUrl: org?.bannerUrl ?? null } });
+  const [org, timeZone] = await Promise.all([
+    dbUnscoped.organization.findUnique({ where: { id: session.organizationId }, select: { bannerUrl: true, timeZone: true } }),
+    employeeTimeZone(session.employeeId),
+  ]);
+  return NextResponse.json({
+    session,
+    employee,
+    // timeZone: the signed-in person's zone (their location's, else the org's); use it to show times and "today".
+    timeZone,
+    organization: { bannerUrl: org?.bannerUrl ?? null, timeZone: org?.timeZone ?? timeZone },
+  });
 });

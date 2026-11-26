@@ -4,6 +4,7 @@ import { requireSession, requirePermission, route, readJson, notFound, forbidden
 import { employeeUpdateSchema, selfUpdateSchema } from "@/lib/validators";
 import { toIsoDate } from "@/lib/dates";
 import { assertRefsInOrg } from "@/lib/refs";
+import { onEmployeeChanged } from "@/lib/approvals";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -26,6 +27,7 @@ const detail = {
   department: { select: { id: true, name: true } },
   designation: { select: { id: true, name: true } },
   location: { select: { id: true, name: true } },
+  shift: { select: { id: true, name: true, startTime: true, endTime: true } },
   reportingManager: { select: { id: true, firstName: true, lastName: true } },
   clerkUserId: true,
 } as const;
@@ -62,6 +64,10 @@ export const PATCH = route<Ctx>(async (req, { params }) => {
     },
     select: detail,
   });
+  await onEmployeeChanged(id, {
+    managerChanged: reportingManagerId !== undefined && reportingManagerId !== existing.reportingManagerId,
+    deactivated: existing.status === "ACTIVE" && employee.status === "INACTIVE",
+  });
   return NextResponse.json(serialize(employee));
 });
 
@@ -71,5 +77,6 @@ export const DELETE = route<Ctx>(async (_req, { params }) => {
   const existing = await db.employee.findUnique({ where: { id } });
   if (!existing) throw notFound("Employee");
   const employee = await db.employee.update({ where: { id }, data: { status: "INACTIVE" }, select: detail });
+  if (existing.status === "ACTIVE") await onEmployeeChanged(id, { managerChanged: false, deactivated: true });
   return NextResponse.json(serialize(employee));
 });

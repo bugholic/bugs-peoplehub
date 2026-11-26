@@ -5,6 +5,9 @@ import { apiFetch, errorMessage } from "@/lib/api-client";
 import { PERMISSION_GROUPS, ROLE_PRESETS, SELF_SERVICE, defaultPermissions, type Permission } from "@/lib/permissions";
 import { Alert, Avatar, Button, Card, EmptyState, Field, Input, Select, Spinner, Table, Tabs, cx } from "@/components/ui";
 import { CheckIcon, PlusIcon, SearchIcon, ShieldIcon } from "@/components/icons";
+import { Button as UiButton } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useConfirm } from "@/components/confirm-dialog";
 
 type OrgRole = "ADMIN" | "MANAGER" | "EMPLOYEE";
 type AccessRole = { id: string; name: string; description: string | null; permissions: Permission[]; memberCount: number };
@@ -75,6 +78,7 @@ function RolesTab({ roles, onChanged }: { roles: AccessRole[]; onChanged: () => 
   const [draft, setDraft] = useState<Draft>(() => (roles[0] ? toDraft(roles[0]) : emptyDraft()));
   const [msg, setMsg] = useState<Msg>(null);
   const [busy, setBusy] = useState(false);
+  const [confirm, confirmDialog] = useConfirm();
 
   const saved = draft.id ? roles.find((r) => r.id === draft.id) : undefined;
   const dirty = useMemo(() => {
@@ -87,8 +91,8 @@ function RolesTab({ roles, onChanged }: { roles: AccessRole[]; onChanged: () => 
     );
   }, [saved, draft]);
 
-  function select(next: Draft) {
-    if (dirty && !confirm("Discard unsaved changes to this role?")) return;
+  async function select(next: Draft) {
+    if (dirty && !(await confirm({ title: "Discard unsaved changes?", description: "Your edits to this role haven't been saved.", confirmLabel: "Discard", destructive: true }))) return;
     setMsg(null);
     setDraft(next);
   }
@@ -128,7 +132,7 @@ function RolesTab({ roles, onChanged }: { roles: AccessRole[]; onChanged: () => 
   async function remove() {
     if (!saved) return;
     const who = saved.memberCount ? ` ${saved.memberCount} member${saved.memberCount === 1 ? "" : "s"} will fall back to their default access.` : "";
-    if (!confirm(`Delete "${saved.name}"?${who}`)) return;
+    if (!(await confirm({ title: `Delete "${saved.name}"?`, description: `This can't be undone.${who}`, confirmLabel: "Delete role", destructive: true }))) return;
     setBusy(true);
     try {
       await apiFetch(`/api/roles/${saved.id}`, { method: "DELETE" });
@@ -144,13 +148,14 @@ function RolesTab({ roles, onChanged }: { roles: AccessRole[]; onChanged: () => 
 
   return (
     <div className="grid gap-6 lg:grid-cols-[17rem_1fr]">
+      {confirmDialog}
       {/* Role list */}
       <div className="flex flex-col gap-2 self-start">
         <Button variant="secondary" onClick={() => select(emptyDraft())} className="justify-start">
           <PlusIcon size={16} />
           New role
         </Button>
-        {roles.length === 0 && <p className="px-1 py-3 text-sm text-ink-3">No custom roles yet. Name one and start from a preset.</p>}
+        {roles.length === 0 && <p className="px-1 py-3 text-sm text-muted-foreground">No custom roles yet. Name one and start from a preset.</p>}
         <ul className="flex flex-col gap-1">
           {roles.map((r) => {
             const active = r.id === draft.id;
@@ -161,20 +166,20 @@ function RolesTab({ roles, onChanged }: { roles: AccessRole[]; onChanged: () => 
                   aria-current={active ? "true" : undefined}
                   className={cx(
                     "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors",
-                    active ? "bg-surface shadow-card ring-1 ring-inset ring-line" : "hover:bg-surface-2",
+                    active ? "bg-card shadow-xs ring-1 ring-inset ring-border" : "hover:bg-muted",
                   )}
                 >
                   <span
                     className={cx(
                       "inline-flex size-8 shrink-0 items-center justify-center rounded-lg",
-                      active ? "bg-brand text-white" : "bg-surface-2 text-ink-3 ring-1 ring-inset ring-line",
+                      active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground ring-1 ring-inset ring-border",
                     )}
                   >
                     <ShieldIcon size={16} />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold text-ink">{r.name}</span>
-                    <span className="block text-xs text-ink-3">
+                    <span className="block truncate text-sm font-semibold text-foreground">{r.name}</span>
+                    <span className="block text-xs text-muted-foreground">
                       {r.permissions.length}/{TOTAL} permissions · {r.memberCount} {r.memberCount === 1 ? "member" : "members"}
                     </span>
                   </span>
@@ -203,24 +208,24 @@ function RolesTab({ roles, onChanged }: { roles: AccessRole[]; onChanged: () => 
           </div>
 
           <div className="mt-5">
-            <p className="mb-2 text-[13px] font-medium text-ink-2">Start from a preset</p>
+            <p className="mb-2 text-[13px] font-medium text-foreground/80">Start from a preset</p>
             <div className="flex flex-wrap gap-2">
               {ROLE_PRESETS.map((p) => {
                 const matches = p.permissions.length === draft.permissions.size && p.permissions.every((k) => draft.permissions.has(k));
                 return (
-                  <button
+                  <UiButton
                     key={p.id}
                     type="button"
+                    size="sm"
+                    variant={matches ? "secondary" : "outline"}
                     title={p.description}
+                    aria-pressed={matches}
+                    className={cx("rounded-full", matches && "ring-1 ring-primary/30")}
                     onClick={() => setDraft((d) => ({ ...d, permissions: new Set(p.permissions) }))}
-                    className={cx(
-                      "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-semibold ring-1 ring-inset transition-colors",
-                      matches ? "bg-brand-soft text-brand-ink ring-brand/30" : "bg-surface text-ink-2 ring-line hover:bg-surface-2 hover:text-ink",
-                    )}
                   >
                     {matches && <CheckIcon size={13} />}
                     {p.label}
-                  </button>
+                  </UiButton>
                 );
               })}
             </div>
@@ -234,34 +239,28 @@ function RolesTab({ roles, onChanged }: { roles: AccessRole[]; onChanged: () => 
             return (
               <Card key={g.id}>
                 <label className="mb-3 flex cursor-pointer items-center justify-between gap-3">
-                  <span className="font-display text-base font-semibold text-ink">{g.label}</span>
-                  <span className="flex items-center gap-2 text-xs font-medium text-ink-3">
+                  <span className="text-base font-semibold text-foreground">{g.label}</span>
+                  <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                     {on}/{keys.length}
-                    <input
-                      type="checkbox"
-                      className="size-4 accent-[var(--color-brand)]"
-                      checked={on === keys.length}
-                      ref={(el) => {
-                        if (el) el.indeterminate = on > 0 && on < keys.length;
-                      }}
-                      onChange={(e) => toggle(keys, e.target.checked)}
+                    <Checkbox
+                      checked={on === keys.length ? true : on > 0 ? "indeterminate" : false}
+                      onCheckedChange={(v) => toggle(keys, v === true)}
                       aria-label={`All ${g.label} permissions`}
                     />
                   </span>
                 </label>
-                <ul className="divide-y divide-line border-t border-line">
+                <ul className="divide-y divide-border border-t border-border">
                   {g.permissions.map((p) => (
                     <li key={p.key}>
                       <label className="flex cursor-pointer items-start gap-3 py-3">
-                        <input
-                          type="checkbox"
-                          className="mt-0.5 size-4 shrink-0 accent-[var(--color-brand)]"
+                        <Checkbox
+                          className="mt-0.5 shrink-0"
                           checked={draft.permissions.has(p.key)}
-                          onChange={(e) => toggle([p.key], e.target.checked)}
+                          onCheckedChange={(v) => toggle([p.key], v === true)}
                         />
                         <span>
-                          <span className="block text-sm font-medium text-ink">{p.label}</span>
-                          <span className="block text-[13px] text-ink-3">{p.description}</span>
+                          <span className="block text-sm font-medium text-foreground">{p.label}</span>
+                          <span className="block text-[13px] text-muted-foreground">{p.description}</span>
                         </span>
                       </label>
                     </li>
@@ -272,8 +271,8 @@ function RolesTab({ roles, onChanged }: { roles: AccessRole[]; onChanged: () => 
           })}
         </div>
 
-        <div className="mt-5 rounded-2xl bg-surface-2 px-5 py-4 text-[13px] text-ink-2 ring-1 ring-inset ring-line">
-          <p className="mb-1.5 font-semibold text-ink">Always included for every member</p>
+        <div className="mt-5 rounded-xl bg-muted/60 px-5 py-4 text-[13px] text-foreground/80 ring-1 ring-inset ring-border">
+          <p className="mb-1.5 font-semibold text-foreground">Always included for every member</p>
           <ul className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
             {SELF_SERVICE.map((s) => (
               <li key={s} className="flex items-center gap-2">
@@ -282,7 +281,7 @@ function RolesTab({ roles, onChanged }: { roles: AccessRole[]; onChanged: () => 
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-ink-3">Creating and assigning roles stays with organization admins.</p>
+          <p className="mt-2 text-muted-foreground">Creating and assigning roles stays with organization admins.</p>
         </div>
 
         {msg && (
@@ -291,7 +290,7 @@ function RolesTab({ roles, onChanged }: { roles: AccessRole[]; onChanged: () => 
           </div>
         )}
 
-        <div className="sticky bottom-0 mt-5 flex flex-wrap items-center gap-3 border-t border-line bg-canvas/90 py-4 backdrop-blur">
+        <div className="sticky bottom-0 mt-5 flex flex-wrap items-center gap-3 border-t border-border bg-background/90 py-4 backdrop-blur">
           <Button type="submit" disabled={busy || !dirty || !draft.name.trim()}>
             {busy ? "Saving…" : draft.id ? "Save changes" : "Create role"}
           </Button>
@@ -300,7 +299,7 @@ function RolesTab({ roles, onChanged }: { roles: AccessRole[]; onChanged: () => 
               Delete role
             </Button>
           )}
-          <span className="ml-auto text-[13px] text-ink-3">
+          <span className="ml-auto text-[13px] text-muted-foreground">
             {draft.permissions.size} of {TOTAL} permissions selected
           </span>
         </div>
@@ -350,9 +349,9 @@ function AssignTab({
   if (roles.length === 0) {
     return (
       <EmptyState hint="Create a role first, then assign it to people here.">
-        <button onClick={onCreateRole} className="underline underline-offset-4 hover:text-brand-ink">
+        <UiButton variant="link" onClick={onCreateRole} className="h-auto p-0 text-base">
           No roles to assign yet
-        </button>
+        </UiButton>
       </EmptyState>
     );
   }
@@ -361,10 +360,10 @@ function AssignTab({
     <div>
       <div className="mb-5 flex flex-wrap items-center gap-4">
         <div className="relative w-full max-w-sm">
-          <SearchIcon size={17} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-3" />
+          <SearchIcon size={17} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Search people" value={q} onChange={(e) => setQ(e.target.value)} className="h-11 pl-10" aria-label="Search people" />
         </div>
-        <p className="text-[13px] text-ink-3">&ldquo;Default&rdquo; follows the person&rsquo;s organization role. Org admins always have full access.</p>
+        <p className="text-[13px] text-muted-foreground">&ldquo;Default&rdquo; follows the person&rsquo;s organization role. Org admins always have full access.</p>
       </div>
       {msg && (
         <div className="mb-4">
@@ -381,15 +380,15 @@ function AssignTab({
                 <div className="flex items-center gap-3">
                   <Avatar name={m.name} photoUrl={m.photoUrl} size="sm" />
                   <div className="min-w-0">
-                    <p className="truncate font-medium text-ink">{m.name}</p>
-                    <p className="truncate text-xs text-ink-3">{m.designation ?? m.email}</p>
+                    <p className="truncate font-medium text-foreground">{m.name}</p>
+                    <p className="truncate text-xs text-muted-foreground">{m.designation ?? m.email}</p>
                   </div>
                 </div>
               </td>
-              <td className="px-5 py-3 text-ink-2">{m.hasLogin ? ORG_ROLE_LABEL[m.orgRole] : <span className="text-ink-3">Not joined</span>}</td>
+              <td className="px-5 py-3 text-foreground/80">{m.hasLogin ? ORG_ROLE_LABEL[m.orgRole] : <span className="text-muted-foreground">Not joined</span>}</td>
               <td className="px-5 py-3">
                 {m.orgRole === "ADMIN" ? (
-                  <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-brand-ink">
+                  <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-accent-foreground">
                     <ShieldIcon size={14} />
                     Full access
                   </span>
@@ -410,14 +409,14 @@ function AssignTab({
                   </Select>
                 )}
               </td>
-              <td className="px-5 py-3 tabular-nums text-ink-3">
+              <td className="px-5 py-3 tabular-nums text-muted-foreground">
                 {count}/{TOTAL}
               </td>
             </tr>
           );
         })}
       </Table>
-      {filtered.length === 0 && <p className="mt-4 text-sm text-ink-3">No one matches &ldquo;{q}&rdquo;.</p>}
+      {filtered.length === 0 && <p className="mt-4 text-sm text-muted-foreground">No one matches &ldquo;{q}&rdquo;.</p>}
     </div>
   );
 }

@@ -16,6 +16,14 @@ export type PunchLog = {
   checkOut: string | null;
   workedMinutes: number;
   workMode: "OFFICE" | "REMOTE" | "HYBRID" | null;
+  /** Closed by the daily job, not the employee (T16). */
+  autoClosed: boolean;
+  /** Set directly by an admin edit or import (T17). */
+  edited: boolean;
+  /** Shift rules (src/lib/shifts.ts); 0 when no shift applies. */
+  lateMinutes: number;
+  earlyExitMinutes: number;
+  overtimeMinutes: number;
   openSince: string | null;
   sessions: WorkSession[];
   remoteRequest: { id: string; status: "PENDING" | "APPROVED" | "REJECTED" } | null;

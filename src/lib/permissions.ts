@@ -21,6 +21,8 @@ export const PERMISSION_GROUPS = [
       { key: "employees.view_inactive", label: "View deactivated employees", description: "Include inactive people when browsing the directory." },
       { key: "employees.create", label: "Add employees", description: "Create new employee records." },
       { key: "employees.edit", label: "Edit employee profiles", description: "Change anyone's details, department, manager, location and photo." },
+      { key: "employees.view_sensitive", label: "View sensitive employee details", description: "See anyone's identity numbers (PAN, Aadhaar, passport) and bank details." },
+      { key: "employees.edit_sensitive", label: "Edit sensitive employee details", description: "Set anyone's identity numbers and bank details. Employees can see their own but cannot change them." },
       { key: "employees.deactivate", label: "Deactivate employees", description: "Mark an employee as inactive (offboarding)." },
     ],
   },
@@ -31,6 +33,7 @@ export const PERMISSION_GROUPS = [
       { key: "leave.approve_team", label: "Approve team leave", description: "See balances and approve or reject leave for direct reports." },
       { key: "leave.approve_all", label: "Approve leave for everyone", description: "See balances and decide leave requests across the organization." },
       { key: "leave.manage_types", label: "Manage leave types", description: "Create leave types and set their annual quotas." },
+      { key: "leave.adjust_balances", label: "Adjust leave balances", description: "Credit or debit anyone's leave balance, with a reason kept in the adjustment history." },
       { key: "holidays.manage", label: "Manage holiday calendar", description: "Add and remove company holidays." },
     ],
   },
@@ -44,6 +47,8 @@ export const PERMISSION_GROUPS = [
       { key: "attendance.report_team", label: "Team attendance report", description: "Monthly report and CSV export for direct reports." },
       { key: "attendance.report_all", label: "Organization attendance report", description: "Monthly report and CSV export for all employees." },
       { key: "attendance.manage_locations", label: "Manage office locations", description: "Add or edit offices and their check-in geofence." },
+      { key: "attendance.edit", label: "Edit attendance records", description: "Set or clear anyone's check-in/out for a day and import attendance from CSV; every change is kept in an audit trail." },
+      { key: "attendance.manage_shifts", label: "Manage shifts", description: "Define work shifts (timings, grace, half/full-day hours) and the default shift." },
     ],
   },
   {
@@ -93,16 +98,21 @@ export const ROLE_PRESETS: RolePreset[] = [
       "employees.view_inactive",
       "employees.create",
       "employees.edit",
+      "employees.view_sensitive",
+      "employees.edit_sensitive",
       "employees.deactivate",
       "leave.approve_team",
       "leave.approve_all",
       "leave.manage_types",
+      "leave.adjust_balances",
       "holidays.manage",
       "attendance.approve_team",
       "attendance.approve_all",
       "attendance.remote_approve",
       "attendance.report_team",
       "attendance.report_all",
+      "attendance.edit",
+      "attendance.manage_shifts",
       "org.structure",
     ],
   },
@@ -119,4 +129,16 @@ export function defaultPermissions(clerkRole: "ADMIN" | "MANAGER" | "EMPLOYEE"):
   if (clerkRole === "ADMIN") return ALL_PERMISSIONS;
   if (clerkRole === "MANAGER") return preset("manager");
   return preset("employee");
+}
+
+/**
+ * Effective permissions for a member: Clerk org admins always hold everything (so an org
+ * can never lock itself out); otherwise a custom access role's list, else the Clerk role default.
+ */
+export function effectivePermissions(
+  clerkRole: "ADMIN" | "MANAGER" | "EMPLOYEE",
+  accessRolePermissions: readonly string[] | null | undefined,
+): Permission[] {
+  if (clerkRole === "ADMIN") return ALL_PERMISSIONS;
+  return accessRolePermissions ? sanitizePermissions(accessRolePermissions) : defaultPermissions(clerkRole);
 }

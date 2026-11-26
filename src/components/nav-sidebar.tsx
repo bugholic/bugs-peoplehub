@@ -3,130 +3,178 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { OrganizationSwitcher, useClerk } from "@clerk/nextjs";
+import { Building2, CalendarDays, ChevronsUpDown, Clock, LayoutDashboard, LogOut, Network, Shield, UserRound, Users, type LucideIcon } from "lucide-react";
 import type { Session } from "@/lib/session";
 import type { Permission } from "@/lib/permissions";
-import { Avatar, cx } from "@/components/ui";
-import { BriefcaseIcon, ClockIcon, HomeIcon, LogOutIcon, OrgIcon, PlaneIcon, ShieldIcon, UsersIcon } from "@/components/icons";
+import { cn } from "@/lib/utils";
+import { Avatar } from "@/components/ui";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { NotificationBell } from "@/components/notification-bell";
+import { Separator } from "@/components/ui/separator";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarRail,
+  SidebarTrigger,
+  useSidebar,
+} from "@/components/ui/sidebar";
 
-const LINKS = [
-  { href: "/dashboard", label: "Dashboard", icon: HomeIcon },
-  { href: "/employees", label: "Employees", icon: UsersIcon },
-  { href: "/org-chart", label: "Org chart", icon: OrgIcon },
-  { href: "/leave", label: "Leave", icon: PlaneIcon },
-  { href: "/attendance", label: "Attendance", icon: ClockIcon },
+type NavLink = { href: string; label: string; icon: LucideIcon };
+
+const LINKS: NavLink[] = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/employees", label: "Employees", icon: Users },
+  { href: "/org-chart", label: "Org chart", icon: Network },
+  { href: "/leave", label: "Leave", icon: CalendarDays },
+  { href: "/attendance", label: "Attendance", icon: Clock },
 ];
 
 // Shown only to people allowed to use them (pages and APIs enforce it too; this just hides the links).
 // `perm: "ADMIN"` = Clerk org admins only.
-const ADMIN_LINKS: { href: string; label: string; icon: typeof HomeIcon; perm: Permission | "ADMIN" }[] = [
-  { href: "/settings", label: "Structure", icon: BriefcaseIcon, perm: "org.structure" },
-  { href: "/organization", label: "Organization", icon: UsersIcon, perm: "org.members" },
-  { href: "/roles", label: "Roles & permissions", icon: ShieldIcon, perm: "ADMIN" },
+const ADMIN_LINKS: (NavLink & { perm: Permission | "ADMIN" })[] = [
+  { href: "/settings", label: "Structure & branding", icon: Building2, perm: "org.structure" },
+  { href: "/organization", label: "Members", icon: UserRound, perm: "org.members" },
+  { href: "/roles", label: "Roles & permissions", icon: Shield, perm: "ADMIN" },
 ];
 
 const ROLE_LABEL = { ADMIN: "Admin", MANAGER: "Manager", EMPLOYEE: "Employee" } as const;
 
-export function Logo({ className }: { className?: string }) {
+const isActive = (pathname: string, href: string) => pathname === href || pathname.startsWith(`${href}/`);
+
+export function Logo({ className, compact }: { className?: string; compact?: boolean }) {
   return (
-    <div className={cx("flex items-center gap-2.5", className)}>
-      <span className="relative inline-flex size-9 items-center justify-center rounded-xl bg-brand">
-        <span className="absolute left-2 top-2 size-2.5 rounded-full bg-marigold" />
-        <span className="absolute bottom-2 right-2 size-3.5 rounded-full bg-white/90" />
+    <div className={cn("flex items-center gap-2.5", className)}>
+      <span className="relative inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary">
+        <span className="absolute left-1.5 top-1.5 size-2 rounded-full bg-marigold" />
+        <span className="absolute bottom-1.5 right-1.5 size-3 rounded-full bg-white/90" />
       </span>
-      <span className="font-display text-lg font-semibold tracking-tight">PeopleHub</span>
+      {!compact && <span className="truncate text-base font-semibold tracking-tight">PeopleHub</span>}
     </div>
   );
 }
 
-export function NavSidebar({ session }: { session: Session }) {
-  const pathname = usePathname();
+function NavGroup({ label, links, pathname }: { label: string; links: NavLink[]; pathname: string }) {
+  const { isMobile, setOpenMobile } = useSidebar();
+  if (links.length === 0) return null;
+  return (
+    <SidebarGroup>
+      <SidebarGroupLabel>{label}</SidebarGroupLabel>
+      <SidebarGroupContent>
+        <SidebarMenu>
+          {links.map(({ href, label: text, icon: Icon }) => (
+            <SidebarMenuItem key={href}>
+              <SidebarMenuButton asChild isActive={isActive(pathname, href)} tooltip={text}>
+                {/* Close the mobile drawer after navigating. */}
+                <Link href={href} onClick={() => isMobile && setOpenMobile(false)}>
+                  <Icon />
+                  <span>{text}</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
+  );
+}
+
+function UserMenu({ session }: { session: Session }) {
   const { signOut } = useClerk();
+  const { isMobile } = useSidebar();
+  const roleLabel = session.accessRole?.name ?? ROLE_LABEL[session.role];
+  return (
+    <SidebarMenu>
+      <SidebarMenuItem>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <SidebarMenuButton size="lg" className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground">
+              <Avatar name={session.name} size="sm" className="rounded-lg" />
+              <div className="grid flex-1 text-left text-sm leading-tight">
+                <span className="truncate font-medium">{session.name}</span>
+                <span className="truncate text-xs text-muted-foreground">{roleLabel}</span>
+              </div>
+              <ChevronsUpDown className="ml-auto size-4" />
+            </SidebarMenuButton>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-(--radix-dropdown-menu-trigger-width) min-w-56" side={isMobile ? "bottom" : "right"} align="end" sideOffset={4}>
+            <DropdownMenuLabel className="font-normal">
+              <p className="truncate text-sm font-medium">{session.name}</p>
+              <p className="truncate text-xs text-muted-foreground">{roleLabel}</p>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuItem asChild>
+                <Link href={`/employees/${session.employeeId}`}>
+                  <UserRound /> My profile
+                </Link>
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onSelect={() => signOut({ redirectUrl: "/sign-in" })}>
+              <LogOut /> Sign out
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </SidebarMenuItem>
+    </SidebarMenu>
+  );
+}
 
-  const logout = () => signOut({ redirectUrl: "/sign-in" });
-
-  const links = [
-    ...LINKS,
-    ...ADMIN_LINKS.filter((l) => (l.perm === "ADMIN" ? session.role === "ADMIN" : session.permissions.includes(l.perm))),
-  ];
-  const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+export function AppSidebar({ session }: { session: Session }) {
+  const pathname = usePathname();
+  const admin = ADMIN_LINKS.filter((l) => (l.perm === "ADMIN" ? session.role === "ADMIN" : session.permissions.includes(l.perm)));
 
   return (
-    <>
-      {/* Desktop rail */}
-      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col bg-night px-4 py-6 text-white lg:flex">
-        <Logo className="px-2" />
-        <div className="mt-6 rounded-xl bg-surface p-1 text-ink">
+    <Sidebar collapsible="icon" variant="inset">
+      <SidebarHeader>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton size="lg" asChild>
+              <Link href="/dashboard">
+                <Logo />
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+        {/* Clerk's switcher has no icon-only form, so it hides when the rail is collapsed. */}
+        <div className="group-data-[collapsible=icon]:hidden [&_.cl-organizationSwitcherTrigger]:w-full [&_.cl-organizationSwitcherTrigger]:justify-between [&_.cl-rootBox]:w-full">
           <OrganizationSwitcher hidePersonal afterSelectOrganizationUrl="/dashboard" afterCreateOrganizationUrl="/dashboard" />
         </div>
-        <nav className="mt-6 flex flex-1 flex-col gap-1">
-          {links.map(({ href, label, icon: Icon }) => {
-            const active = isActive(href);
-            return (
-              <Link
-                key={href}
-                href={href}
-                aria-current={active ? "page" : undefined}
-                className={cx(
-                  "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
-                  active ? "bg-night-2 text-white" : "text-white/55 hover:bg-white/5 hover:text-white",
-                )}
-              >
-                {active && <span className="absolute -left-4 top-2 bottom-2 w-1 rounded-r-full bg-marigold" />}
-                <Icon size={19} className={active ? "text-marigold" : ""} />
-                {label}
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="rounded-2xl bg-night-2 p-3">
-          <div className="flex items-center gap-3">
-            <Avatar name={session.name} size="md" />
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold">{session.name}</p>
-              <p className="text-xs text-white/50">{session.accessRole?.name ?? ROLE_LABEL[session.role]}</p>
-            </div>
-          </div>
-          <button
-            onClick={logout}
-            className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg py-2 text-xs font-semibold text-white/60 ring-1 ring-inset ring-white/10 transition-colors hover:bg-white/5 hover:text-white"
-          >
-            <LogOutIcon size={14} />
-            Sign out
-          </button>
-        </div>
-      </aside>
+      </SidebarHeader>
+      <SidebarContent>
+        <NavGroup label="Workspace" links={LINKS} pathname={pathname} />
+        <NavGroup label="Admin" links={admin} pathname={pathname} />
+      </SidebarContent>
+      <SidebarFooter>
+        <UserMenu session={session} />
+      </SidebarFooter>
+      <SidebarRail />
+    </Sidebar>
+  );
+}
 
-      {/* Mobile / tablet top bar */}
-      <header className="sticky top-0 z-20 bg-night text-white lg:hidden">
-        <div className="flex items-center justify-between px-4 py-3">
-          <Logo />
-          <div className="flex items-center gap-2">
-            <Avatar name={session.name} size="sm" />
-            <button onClick={logout} aria-label="Sign out" className="rounded-lg p-2 text-white/60 hover:bg-white/5 hover:text-white">
-              <LogOutIcon size={18} />
-            </button>
-          </div>
-        </div>
-        <nav className="flex gap-1 overflow-x-auto px-3 pb-3">
-          {links.map(({ href, label, icon: Icon }) => {
-            const active = isActive(href);
-            return (
-              <Link
-                key={href}
-                href={href}
-                aria-current={active ? "page" : undefined}
-                className={cx(
-                  "flex shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-[13px] font-medium",
-                  active ? "bg-night-2 text-white" : "text-white/55",
-                )}
-              >
-                <Icon size={16} className={active ? "text-marigold" : ""} />
-                {label}
-              </Link>
-            );
-          })}
-        </nav>
-      </header>
-    </>
+/** Sticky top bar inside the inset: sidebar toggle, current section, theme switch. */
+export function SiteHeader() {
+  const pathname = usePathname();
+  const current = [...LINKS, ...ADMIN_LINKS].find((l) => isActive(pathname, l.href));
+  return (
+    <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 rounded-t-xl border-b bg-background/85 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/70">
+      <SidebarTrigger className="-ml-1" />
+      <Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-4" />
+      <span className="truncate text-sm font-medium">{current?.label ?? "PeopleHub"}</span>
+      <div className="ml-auto flex items-center gap-1">
+        <NotificationBell />
+        <ThemeToggle />
+      </div>
+    </header>
   );
 }

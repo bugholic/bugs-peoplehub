@@ -9,6 +9,8 @@ export function serializeLocation(l: Location) {
     latitude: l.latitude,
     longitude: l.longitude,
     radiusMeters: l.radiusMeters,
+    timeZone: l.timeZone,
+    weekOff: l.weekOff,
     isOffice: l.latitude !== null && l.longitude !== null,
   };
 }

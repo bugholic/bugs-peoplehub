@@ -10,6 +10,7 @@ type Lookups = {
   departments: { id: string; name: string }[];
   designations: { id: string; name: string }[];
   locations: { id: string; name: string }[];
+  shifts: { id: string; name: string; startTime: string; endTime: string; isDefault: boolean }[];
   managers: { id: string; name: string; empCode: string }[];
 };
 
@@ -27,6 +28,7 @@ export default function NewEmployeePage() {
     departmentId: "",
     designationId: "",
     locationId: "",
+    shiftId: "",
     reportingManagerId: "",
   });
 
@@ -51,6 +53,7 @@ export default function NewEmployeePage() {
           departmentId: form.departmentId || null,
           designationId: form.designationId || null,
           locationId: form.locationId || null,
+          shiftId: form.shiftId || null,
           reportingManagerId: form.reportingManagerId || null,
         }),
       });
@@ -121,6 +124,18 @@ export default function NewEmployeePage() {
             ))}
           </Select>
         </Field>
+        {!!lookups?.shifts.length && (
+          <Field label="Shift">
+            <Select value={form.shiftId} onChange={(e) => set("shiftId", e.target.value)}>
+              <option value="">Default ({lookups.shifts.find((s) => s.isDefault)?.name ?? "none"})</option>
+              {lookups.shifts.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} · {s.startTime}–{s.endTime}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
         <Field label="Reporting manager">
           <Select value={form.reportingManagerId} onChange={(e) => set("reportingManagerId", e.target.value)}>
             <option value="">—</option>

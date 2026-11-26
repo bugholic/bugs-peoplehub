@@ -12,8 +12,8 @@ export default async function NoAccessPage() {
   return (
     <AuthShell>
       <div className="w-full max-w-sm text-center">
-        <h2 className="font-display text-3xl font-semibold tracking-tight">No employee record</h2>
-        <p className="mt-2 text-ink-2">
+        <h2 className="text-3xl font-semibold tracking-tight">No employee record</h2>
+        <p className="mt-2 text-foreground/80">
           You&apos;re signed in, but no active employee uses a verified email matching this account. Ask an admin to add you,
           then sign in again.
         </p>

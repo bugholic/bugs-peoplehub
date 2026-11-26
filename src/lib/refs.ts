@@ -6,6 +6,7 @@ type Refs = {
   designationId?: string | null;
   locationId?: string | null;
   reportingManagerId?: string | null;
+  shiftId?: string | null;
 };
 
 /**
@@ -17,6 +18,7 @@ export async function assertRefsInOrg(r: Refs) {
     [r.departmentId, "department", (id) => db.department.count({ where: { id } })],
     [r.designationId, "designation", (id) => db.designation.count({ where: { id } })],
     [r.locationId, "location", (id) => db.location.count({ where: { id } })],
+    [r.shiftId, "shift", (id) => db.shift.count({ where: { id } })],
     [r.reportingManagerId, "reporting manager", (id) => db.employee.count({ where: { id } })],
   ];
   for (const [id, label, count] of checks) {

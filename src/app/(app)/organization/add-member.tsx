@@ -29,7 +29,7 @@ export function AddMember({ canAddAdmin }: { canAddAdmin: boolean }) {
   return (
     <Card className="mb-6 max-w-3xl">
       <CardTitle>Add an existing user</CardTitle>
-      <p className="mb-4 text-sm text-ink-2">
+      <p className="mb-4 text-sm text-foreground/80">
         For people who have already signed up. No email is sent; they can open the app right away.
       </p>
       <form onSubmit={submit} className="grid gap-3 sm:grid-cols-[1fr_11rem_auto] sm:items-end">

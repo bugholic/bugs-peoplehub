@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { forbidden, requirePermission, route, notFound } from "@/lib/authz";
 import { decisionSchema } from "@/lib/validators";
+import { onRemoteDecided } from "@/lib/notification-events";
 import { decideRemoteRequest, remoteRequestInclude, serializeRemoteRequest } from "@/lib/attendance";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -14,6 +15,7 @@ export const POST = route<Ctx>(async (req, { params }) => {
   if (!existing) throw notFound("Remote work request");
   if (existing.employeeId === session.employeeId) throw forbidden("You can't approve your own request");
   await decideRemoteRequest(id, session.employeeId, true, note);
+  await onRemoteDecided(id, session.employeeId);
   const updated = await db.remoteWorkRequest.findUniqueOrThrow({ where: { id }, include: remoteRequestInclude });
   return NextResponse.json(serializeRemoteRequest(updated));
 });

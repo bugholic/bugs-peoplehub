@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { requireSession, route, notFound, assertCanApprove } from "@/lib/authz";
 import { decisionSchema } from "@/lib/validators";
+import { onRegularizationDecided } from "@/lib/notification-events";
 import { decideRegularization } from "@/lib/attendance";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -12,7 +13,8 @@ export const POST = route<Ctx>(async (req, { params }) => {
   const { note } = decisionSchema.parse(await req.json().catch(() => ({})));
   const existing = await db.regularizationRequest.findUnique({ where: { id } });
   if (!existing) throw notFound("Regularization request");
-  await assertCanApprove(session, existing.employeeId, "attendance");
+  await assertCanApprove(session, existing.employeeId, "attendance", existing.approverId);
   const updated = await decideRegularization(id, session.employeeId, true, note);
+  await onRegularizationDecided(id, session.employeeId);
   return NextResponse.json(updated);
 });

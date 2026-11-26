@@ -1,22 +1,21 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { requirePermission, route, readJson, conflict, notFound } from "@/lib/authz";
+import { requirePermission, route, readJson, conflict } from "@/lib/authz";
+import { updateLeaveType } from "@/lib/leave";
 import { leaveTypeUpdateSchema } from "@/lib/validators";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 /**
  * Edit a leave type. Carry-forward settings apply immediately (carry is computed on read).
- * A new annualQuota applies to balance years created from now on; already-created
- * LeaveBalance rows keep their grant (see docs/TODO.md T5).
+ * A new annualQuota also moves this year's and next year's existing balances by the
+ * difference, logged as QUOTA_CHANGE adjustments (see src/lib/leave.ts#updateLeaveType).
  */
 export const PATCH = route<Ctx>(async (req, { params }) => {
-  await requirePermission("leave.manage_types");
+  const session = await requirePermission("leave.manage_types");
   const { id } = await params;
   const body = leaveTypeUpdateSchema.parse(await readJson(req));
 
-  const existing = await db.leaveType.findUnique({ where: { id } });
-  if (!existing) throw notFound("Leave type");
   if (body.name !== undefined || body.code !== undefined) {
     const clash = await db.leaveType.findFirst({
       where: {
@@ -27,6 +26,6 @@ export const PATCH = route<Ctx>(async (req, { params }) => {
     if (clash) throw conflict("A leave type with this name or code already exists", "DUPLICATE");
   }
 
-  const type = await db.leaveType.update({ where: { id }, data: body });
-  return NextResponse.json(type);
+  const { type, balancesUpdated } = await updateLeaveType(id, body, session.employeeId);
+  return NextResponse.json({ ...type, balancesUpdated });
 });

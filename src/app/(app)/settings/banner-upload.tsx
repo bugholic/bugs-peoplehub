@@ -55,8 +55,8 @@ export function BannerUpload() {
   return (
     <Card className="mb-6">
       <CardTitle>Company banner</CardTitle>
-      <p className="mb-4 text-sm text-ink-3">Shown at the top of every employee profile. Use a wide image, about 1500 × 300 px. JPEG, PNG or WebP, up to 5 MB.</p>
-      <div className="relative mb-4 h-28 overflow-hidden rounded-xl bg-night ring-1 ring-inset ring-line sm:h-36">
+      <p className="mb-4 text-sm text-muted-foreground">Shown at the top of every employee profile. Use a wide image, about 1500 × 300 px. JPEG, PNG or WebP, up to 5 MB.</p>
+      <div className="relative mb-4 h-28 overflow-hidden rounded-xl bg-night ring-1 ring-inset ring-border sm:h-36">
         {bannerUrl ? (
           // Served by our auth-checked API route (private bucket), so next/image's optimizer can't fetch it.
           // eslint-disable-next-line @next/next/no-img-element

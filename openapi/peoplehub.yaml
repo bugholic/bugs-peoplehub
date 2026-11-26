@@ -11,6 +11,8 @@ tags:
   - name: Leave
   - name: Attendance
   - name: Roles
+  - name: Notifications
+  - name: Jobs
 
 components:
   securitySchemes:
@@ -60,7 +62,7 @@ components:
           items: { $ref: "#/components/schemas/Permission" }
     Permission:
       type: string
-      enum: [employees.view_inactive, employees.create, employees.edit, employees.deactivate, leave.approve_team, leave.approve_all, leave.manage_types, holidays.manage, attendance.approve_team, attendance.approve_all, attendance.remote_approve, attendance.report_team, attendance.report_all, attendance.manage_locations, org.structure, org.members]
+      enum: [employees.view_inactive, employees.create, employees.edit, employees.view_sensitive, employees.edit_sensitive, employees.deactivate, leave.approve_team, leave.approve_all, leave.manage_types, leave.adjust_balances, holidays.manage, attendance.approve_team, attendance.approve_all, attendance.remote_approve, attendance.report_team, attendance.report_all, attendance.manage_locations, attendance.manage_shifts, attendance.edit, org.structure, org.members]
     AccessRole:
       type: object
       properties:
@@ -101,6 +103,15 @@ components:
         department: { $ref: "#/components/schemas/Lookup" }
         designation: { $ref: "#/components/schemas/Lookup" }
         location: { $ref: "#/components/schemas/Lookup" }
+        shift:
+          type: object
+          nullable: true
+          description: "Assigned shift (detail endpoint only); null = the organization default"
+          properties:
+            id: { type: string }
+            name: { type: string }
+            startTime: { type: string, example: "09:00" }
+            endTime: { type: string, example: "18:00" }
         reportingManagerId: { type: string, nullable: true }
     EmployeeCreate:
       type: object
@@ -115,6 +126,7 @@ components:
         departmentId: { type: string, nullable: true }
         designationId: { type: string, nullable: true }
         locationId: { type: string, nullable: true }
+        shiftId: { type: string, nullable: true, description: "null = the organization default shift" }
         reportingManagerId: { type: string, nullable: true }
         role: { type: string, enum: [ADMIN, MANAGER, EMPLOYEE], default: EMPLOYEE }
         password: { type: string, minLength: 8, description: "Set to create a login for this employee" }
@@ -132,6 +144,42 @@ components:
         used: { type: number }
         pending: { type: number }
         available: { type: number }
+    Notification:
+      type: object
+      properties:
+        id: { type: string }
+        type:
+          type: string
+          enum: [LEAVE_SUBMITTED, LEAVE_APPROVED, LEAVE_REJECTED, LEAVE_CANCELLED, REGULARIZATION_SUBMITTED, REGULARIZATION_APPROVED, REGULARIZATION_REJECTED, REMOTE_SUBMITTED, REMOTE_APPROVED, REMOTE_REJECTED, BALANCE_ADJUSTED, APPROVALS_PENDING, APPROVAL_ASSIGNED, ATTENDANCE_AUTO_CLOSED, ATTENDANCE_MISSING, ATTENDANCE_EDITED, LEAVE_REVOKED]
+        title: { type: string }
+        body: { type: string, nullable: true }
+        link: { type: string, nullable: true, description: "App path to open" }
+        read: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        actor:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            name: { type: string }
+            photoUrl: { type: string, nullable: true }
+    LeaveBalanceAdjustment:
+      type: object
+      properties:
+        id: { type: string }
+        employeeId: { type: string }
+        leaveType: { $ref: "#/components/schemas/Lookup" }
+        year: { type: integer }
+        days: { type: number, description: "Signed change to the year's grant" }
+        kind: { type: string, enum: [MANUAL, QUOTA_CHANGE] }
+        reason: { type: string }
+        createdBy:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string }
+            name: { type: string }
+        createdAt: { type: string, format: date-time }
     LeaveRequest:
       type: object
       properties:
@@ -145,6 +193,7 @@ components:
         leaveType: { $ref: "#/components/schemas/Lookup" }
         fromDate: { type: string, format: date }
         toDate: { type: string, format: date }
+        groupId: { type: string, nullable: true, description: "Shared by the parts of a combined leave; they are approved, rejected and cancelled together" }
         dayPart: { type: string, enum: [FULL, FIRST_HALF, SECOND_HALF] }
         days: { type: number }
         reason: { type: string }
@@ -162,11 +211,19 @@ components:
       type: object
       properties:
         date: { type: string, format: date }
-        status: { type: string, enum: [PRESENT, ABSENT, LEAVE, HALF_DAY_LEAVE, HOLIDAY, WEEKEND, UPCOMING] }
+        status:
+          type: string
+          enum: [PRESENT, HALF_DAY, ABSENT, LEAVE, HALF_DAY_LEAVE, HOLIDAY, WEEKEND, UPCOMING]
+          description: "Under a shift, a finished working day below the full-day minimum is HALF_DAY, below the half-day minimum ABSENT"
         checkIn: { type: string, format: date-time, nullable: true, description: "First check-in of the day" }
         checkOut: { type: string, format: date-time, nullable: true, description: "Last check-out of the day; null while a session is open" }
         workedMinutes: { type: integer, description: "Total of the day's closed sessions" }
+        lateMinutes: { type: integer, description: "Minutes after the shift start of the first check-in, once past the grace; 0 without a shift" }
+        earlyExitMinutes: { type: integer, description: "Minutes before the shift end of the last check-out, once past the grace; set when no session is open" }
+        overtimeMinutes: { type: integer, description: "Worked minutes beyond the shift length (all worked time on a weekend or holiday)" }
         regularized: { type: boolean }
+        autoClosed: { type: boolean, description: "A session left open was closed by the daily job (at the shift end for office sessions, else at check-in with no time)" }
+        edited: { type: boolean, description: "Set directly by an administrator (edit or CSV import); see /api/attendance/edits" }
         leaveType: { type: string, nullable: true }
         workMode: { $ref: "#/components/schemas/DayWorkMode" }
         remoteStatus: { type: string, enum: [PENDING, APPROVED, REJECTED], nullable: true, description: "Status of the day's remote work request, if any" }
@@ -204,12 +261,18 @@ components:
     AttendanceLog:
       type: object
       properties:
+        autoClosed: { type: boolean, description: "Closed by the daily job, not the employee" }
+        edited: { type: boolean, description: "Set directly by an administrator" }
         id: { type: string }
         date: { type: string, format: date }
         checkIn: { type: string, format: date-time, nullable: true, description: "First check-in of the day" }
         checkOut: { type: string, format: date-time, nullable: true, description: "Last check-out of the day; null while a session is open" }
         workedMinutes: { type: integer, description: "Total of the day's closed sessions" }
         workMode: { $ref: "#/components/schemas/DayWorkMode" }
+        lateMinutes: { type: integer, description: "Minutes after the shift start of the first check-in, once past the grace; 0 without a shift" }
+        earlyExitMinutes: { type: integer, description: "Minutes before the shift end of the last check-out, once past the grace; set when no session is open" }
+        overtimeMinutes: { type: integer, description: "Worked minutes beyond the shift length (all worked time on a weekend or holiday)" }
+        credit: { type: string, enum: [FULL, HALF, SHORT], nullable: true, description: "Day credit under the shift; null without a shift, on off days, or while a session is open" }
         openSince: { type: string, format: date-time, nullable: true }
         sessions:
           type: array
@@ -221,6 +284,102 @@ components:
           properties:
             id: { type: string }
             status: { type: string, enum: [PENDING, APPROVED, REJECTED] }
+    DaySnapshot: { type: object, nullable: true, description: "A day as recorded; null = nothing recorded", properties: { checkIn: { type: string, format: date-time, nullable: true }, checkOut: { type: string, format: date-time, nullable: true }, workedMinutes: { type: integer } } }
+    AttendanceEdit:
+      type: object
+      description: One audited admin change to a day (append-only)
+      properties:
+        id: { type: string }
+        employeeId: { type: string }
+        date: { type: string, format: date }
+        before: { $ref: "#/components/schemas/DaySnapshot" }
+        after: { $ref: "#/components/schemas/DaySnapshot" }
+        reason: { type: string }
+        source: { type: string, enum: [MANUAL, IMPORT] }
+        createdBy: { type: object, nullable: true, properties: { id: { type: string }, name: { type: string } } }
+        createdAt: { type: string, format: date-time }
+    AttendanceImportRow:
+      type: object
+      properties:
+        line: { type: integer, description: "1-based line in the file (header is line 1)" }
+        employee: { type: object, nullable: true, properties: { id: { type: string }, name: { type: string }, empCode: { type: string } } }
+        date: { type: string }
+        checkIn: { type: string }
+        checkOut: { type: string }
+        action: { type: string, enum: [create, update, unchanged, error] }
+        error: { type: string }
+    EmployeeProfile:
+      type: object
+      description: >-
+        Extended profile limited to the sections the caller may see; a section the caller can't see is absent.
+        Every field is null until set.
+      properties:
+        access:
+          type: object
+          properties:
+            view: { type: object, properties: { personal: { type: boolean }, emergency: { type: boolean }, employment: { type: boolean }, sensitive: { type: boolean } } }
+            edit: { type: object, properties: { personal: { type: boolean }, emergency: { type: boolean }, employment: { type: boolean }, sensitive: { type: boolean } } }
+        data:
+          type: object
+          properties:
+            personal:
+              type: object
+              description: Self, direct manager, employees.edit
+              properties:
+                dateOfBirth: { type: string, nullable: true, format: date }
+                gender: { type: string, nullable: true, enum: [MALE, FEMALE, OTHER, UNDISCLOSED, null] }
+                maritalStatus: { type: string, nullable: true, enum: [SINGLE, MARRIED, DIVORCED, WIDOWED, UNDISCLOSED, null] }
+                bloodGroup: { type: string, nullable: true, enum: ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", null] }
+                nationality: { type: string, nullable: true }
+                personalEmail: { type: string, nullable: true }
+                currentAddress: { type: string, nullable: true }
+                permanentAddress: { type: string, nullable: true }
+            emergency:
+              type: object
+              description: Self, direct manager, employees.edit
+              properties:
+                emergencyName: { type: string, nullable: true }
+                emergencyRelation: { type: string, nullable: true }
+                emergencyPhone: { type: string, nullable: true, description: E.164 }
+            employment:
+              type: object
+              description: Self, direct manager, employees.edit
+              properties:
+                employmentType: { type: string, nullable: true, enum: [FULL_TIME, PART_TIME, CONTRACT, INTERN, CONSULTANT, null] }
+                probationEndDate: { type: string, nullable: true, format: date }
+                noticePeriodDays: { type: integer, nullable: true, minimum: 0, maximum: 365 }
+            sensitive:
+              type: object
+              description: Self, employees.view_sensitive, employees.edit_sensitive
+              properties:
+                panNumber: { type: string, nullable: true, example: ABCDE1234F }
+                aadhaarNumber: { type: string, nullable: true, description: 12 digits }
+                passportNumber: { type: string, nullable: true }
+                bankAccountName: { type: string, nullable: true }
+                bankName: { type: string, nullable: true }
+                bankAccountNumber: { type: string, nullable: true, description: 6-20 digits }
+                bankIfsc: { type: string, nullable: true, example: HDFC0001234 }
+    Shift:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        startTime: { type: string, example: "09:00", description: "HH:mm, org time zone" }
+        endTime: { type: string, example: "18:00", description: "HH:mm; at or before startTime = overnight" }
+        graceMinutes: { type: integer }
+        halfDayMinutes: { type: integer, description: "Worked minutes for a half day" }
+        fullDayMinutes: { type: integer, description: "Worked minutes for a full day" }
+        isDefault: { type: boolean, description: "Applies to employees with no shift assigned; exactly one per org once any exist" }
+        overnight: { type: boolean }
+        scheduledMinutes: { type: integer }
+        employeeCount: { type: integer, description: "Employees assigned explicitly (list endpoint only)" }
+    OrganizationSettings:
+      type: object
+      properties:
+        name: { type: string }
+        timeZone: { type: string, example: "Asia/Kolkata" }
+        weekOff: { type: string, example: "0,6", description: "Week-off pattern: comma-separated tokens, \"D\" = weekday D off every week (0 = Sunday ... 6 = Saturday), \"D#n\" = only the n-th D of the month (n 1-5). E.g. \"0,6\" = Sat + Sun, \"0,6#2,6#4\" = Sundays + 2nd and 4th Saturday, \"5,6\" = Fri + Sat, \"\" = none. Stored canonical (sorted, deduplicated); at least one weekday must stay working." }
+        bannerUrl: { type: string, nullable: true }
     OfficeLocation:
       type: object
       properties:
@@ -230,6 +389,8 @@ components:
         longitude: { type: number, nullable: true }
         radiusMeters: { type: integer }
         isOffice: { type: boolean, description: "True when a geofence (latitude/longitude) is configured" }
+        timeZone: { type: string, nullable: true, description: "IANA zone for people based here; null = the organization zone" }
+        weekOff: { type: string, nullable: true, example: "0,6#2,6#4", description: "Week-off pattern for people based here (see OrganizationSettings.weekOff); null = the organization's" }
     RemoteWorkRequest:
       type: object
       properties:
@@ -341,6 +502,85 @@ paths:
         "200":
           description: Signed out
 
+  /api/notifications:
+    get:
+      tags: [Notifications]
+      summary: Your notifications, newest first, with your unread count
+      parameters:
+        - { name: unread, in: query, schema: { type: string, enum: ["true", "false"] }, description: "true = unread only" }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/Notification" } }
+                  unreadCount: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/cron/daily:
+    get:
+      tags: [Jobs]
+      summary: Run the daily jobs for every organization (scheduler only)
+      description: "Called by Vercel Cron (vercel.json, weekdays 03:30 UTC = 09:00 IST). Requires `Authorization: Bearer <CRON_SECRET>`. Per organization, in order: approval escalation (requests waiting on a deactivated approver are re-routed; requests undecided for APPROVAL_ESCALATION_DAYS, default 3, move one level up the reporting line, finally to the HR queue), then the pending-approval digest (requests at least 12h old; nobody reminded twice within 20h), then attendance housekeeping: sessions still open 16h+ into a later day are closed (office: at the shift end; remote or no shift: at check-in, no time) and flagged autoClosed, and people with no check-in, leave or pending correction on their last working day get an ATTENDANCE_MISSING notification (once)."
+      security: []
+      parameters:
+        - { name: Authorization, in: header, required: true, schema: { type: string }, description: "Bearer <CRON_SECRET>" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        organizationId: { type: string }
+                        result:
+                          type: object
+                          properties:
+                            repaired: { type: integer }
+                            escalated: { type: integer }
+                            reminded: { type: integer }
+                            autoClosed: { type: integer }
+                            missing: { type: integer, description: "ATTENDANCE_MISSING notifications sent" }
+                        error: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { description: "CRON_SECRET not configured" }
+
+  /api/notifications/read:
+    post:
+      tags: [Notifications]
+      summary: Mark some (ids) or all of your notifications read
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                ids: { type: array, items: { type: string }, minItems: 1, maxItems: 200, description: "Omit to mark all read. Ids that aren't yours are ignored." }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated: { type: integer }
+                  unreadCount: { type: integer }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /api/me:
     get:
       tags: [Auth]
@@ -355,7 +595,47 @@ paths:
                 properties:
                   session: { $ref: "#/components/schemas/Session" }
                   employee: { $ref: "#/components/schemas/EmployeeSummary" }
+                  timeZone: { type: string, example: "Asia/Kolkata", description: "The signed-in person's zone (location override, else organization). Show times and compute today in it." }
+                  organization:
+                    type: object
+                    properties:
+                      bannerUrl: { type: string, nullable: true }
+                      timeZone: { type: string }
         "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/organization:
+    get:
+      tags: [Auth]
+      summary: Organization settings
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationSettings" }
+    patch:
+      tags: [Auth]
+      summary: Set the organization time zone (org.structure)
+      description: Decides the calendar day for punches, shifts and leave and the zone times are shown in. Locations can override it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                timeZone: { type: string, example: "Asia/Kolkata", description: "IANA zone" }
+                weekOff: { type: string, example: "0,6#2,6#4", description: "Week-off pattern: comma-separated tokens, \"D\" = weekday D off every week (0 = Sunday ... 6 = Saturday), \"D#n\" = only the n-th D of the month (n 1-5). E.g. \"0,6\" = Sat + Sun, \"0,6#2,6#4\" = Sundays + 2nd and 4th Saturday, \"5,6\" = Fri + Sat, \"\" = none. Stored canonical (sorted, deduplicated); at least one weekday must stay working." }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrganizationSettings" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
 
   /api/employees:
     get:
@@ -440,6 +720,7 @@ paths:
               type: object
               properties:
                 phone: { type: string, nullable: true }
+                shiftId: { type: string, nullable: true, description: "Admins only (employees.edit); null = the organization default shift" }
       responses:
         "200":
           description: OK
@@ -472,7 +753,7 @@ paths:
   /api/lookups:
     get:
       tags: [Employees]
-      summary: Departments, designations, locations and potential managers, for form dropdowns
+      summary: Departments, designations, locations, shifts and potential managers, for form dropdowns
       responses:
         "200":
           description: OK
@@ -507,11 +788,54 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { description: "Name or code already in use" }
 
+  /api/leave/adjustments:
+    get:
+      tags: [Leave]
+      summary: An employee's leave balance adjustment history (defaults to self)
+      parameters:
+        - { name: employeeId, in: query, schema: { type: string } }
+        - { name: year, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK, newest first (max 200)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/LeaveBalanceAdjustment" } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Leave]
+      summary: Credit or debit an employee's leave balance (leave.adjust_balances; not your own)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [employeeId, leaveTypeId, year, days, reason]
+              properties:
+                employeeId: { type: string }
+                leaveTypeId: { type: string }
+                year: { type: integer, description: "Up to next year." }
+                days: { type: number, description: "Signed, non-zero, multiple of 0.5: positive credits, negative debits." }
+                reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LeaveBalanceAdjustment" }
+        "400": { description: "Validation failed, zero days, year too far ahead, or the grant would go below zero" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /api/leave/types/{id}:
     patch:
       tags: [Leave]
       summary: Edit a leave type (leave.manage_types)
-      description: Carry-forward changes apply immediately (carry is computed on read). A new annualQuota applies only to balance years created from now on.
+      description: Carry-forward changes apply immediately (carry is computed on read). A new annualQuota also moves existing balances for this year onward by the (join-year-prorated) difference, each logged as a QUOTA_CHANGE adjustment; the response's balancesUpdated says how many.
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
       requestBody:
@@ -589,28 +913,106 @@ paths:
                     items: { $ref: "#/components/schemas/LeaveRequest" }
     post:
       tags: [Leave]
-      summary: Apply for leave
+      summary: Apply for leave, with one type or combined across several
+      description: |
+        Send `leaveTypeId` for a single-type request. Send `parts` instead for a combined leave:
+        the parts are laid over the range's working days in order (e.g. 12 days Casual, then
+        3 days Earned), one LeaveRequest per part sharing a `groupId`. Combined leave is full days only.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [leaveTypeId, fromDate, toDate, reason]
-              properties:
-                leaveTypeId: { type: string }
-                fromDate: { type: string, format: date }
-                toDate: { type: string, format: date }
-                dayPart: { type: string, enum: [FULL, FIRST_HALF, SECOND_HALF], default: FULL }
-                reason: { type: string }
+              oneOf:
+                - type: object
+                  title: Single type
+                  required: [leaveTypeId, fromDate, toDate, reason]
+                  properties:
+                    leaveTypeId: { type: string }
+                    fromDate: { type: string, format: date }
+                    toDate: { type: string, format: date }
+                    dayPart: { type: string, enum: [FULL, FIRST_HALF, SECOND_HALF], default: FULL }
+                    reason: { type: string }
+                - type: object
+                  title: Combined
+                  required: [parts, fromDate, toDate, reason]
+                  properties:
+                    fromDate: { type: string, format: date }
+                    toDate: { type: string, format: date }
+                    reason: { type: string }
+                    parts:
+                      type: array
+                      minItems: 2
+                      maxItems: 5
+                      description: In date order; each type once; days must add up to the range's working days
+                      items:
+                        type: object
+                        required: [leaveTypeId, days]
+                        properties:
+                          leaveTypeId: { type: string }
+                          days: { type: integer, minimum: 1 }
       responses:
         "201":
-          description: Created
+          description: Created. A combined leave returns its group and every part.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/LeaveRequest" }
-        "400": { description: "Insufficient balance, cross-year range, or no working days in range" }
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/LeaveRequest"
+                  - type: object
+                    properties:
+                      groupId: { type: string }
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/LeaveRequest" }
+        "400": { description: "Insufficient balance (per part for combined), cross-year range, no working days, or parts that don't add up (PARTS_MISMATCH, DUPLICATE_TYPE)" }
         "409": { description: "Overlaps an existing request" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/leave/requests/preview:
+    get:
+      tags: [Leave]
+      summary: Working days and balance a request would take, with a suggested combined split when the type doesn't cover it
+      parameters:
+        - { in: query, name: leaveTypeId, required: true, schema: { type: string } }
+        - { in: query, name: fromDate, required: true, schema: { type: string, format: date } }
+        - { in: query, name: toDate, required: true, schema: { type: string, format: date } }
+        - { in: query, name: dayPart, schema: { type: string, enum: [FULL, FIRST_HALF, SECOND_HALF], default: FULL } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  days: { type: number }
+                  available: { type: number, nullable: true, description: "null for unpaid (unlimited) types" }
+                  covered: { type: boolean }
+                  suggestion:
+                    type: object
+                    nullable: true
+                    description: "Chosen type first, then other paid types (most available first), then unpaid; null when covered or half day"
+                    properties:
+                      parts:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            leaveTypeId: { type: string }
+                            days: { type: integer }
+                      shortfall: { type: integer, description: "Days no balance covers (no unpaid type configured)" }
+                  balances:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        leaveTypeId: { type: string }
+                        name: { type: string }
+                        paid: { type: boolean }
+                        available: { type: number, nullable: true }
+        "400": { description: "Cross-year or reversed range, half day over several dates" }
+        "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/ValidationError" }
 
   /api/leave/requests/{id}/approve:
@@ -683,6 +1085,50 @@ paths:
         "403": { description: "Not your own request" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Already started, or not cancellable" }
+
+  /api/leave/requests/{id}/shorten:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Leave]
+      summary: End approved leave early, or revoke it (also for leave that has started)
+      description: >-
+        Releases every leave day on or after `returnOn` (the first day back) and restores the balance; days already
+        taken stay. Acts on the whole application (a combined leave is trimmed across its parts). If `returnOn` is on or
+        before the first day, the whole application is cancelled. The applicant can do this to their own leave
+        (returning early); a manager or HR who could approve it can do it to someone else's as a revoke (the employee
+        is notified with the `note`, type LEAVE_REVOKED). `returnOn` can't be in the past.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [returnOn]
+              properties:
+                returnOn: { type: string, format: date }
+                note: { type: string, maxLength: 500, description: "Shown to the employee on a revoke" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  freedDays: { type: number, description: "Days given back to the balance(s)" }
+                  cancelled: { type: boolean, description: "Everything was released; the application is now CANCELLED" }
+                  lastDay: { type: string, format: date, nullable: true, description: "Last day still on leave; null when cancelled" }
+                  revoked: { type: boolean, description: "Done by someone other than the applicant" }
+                  request: { $ref: "#/components/schemas/LeaveRequest" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Not approved leave (cancel a pending request instead)" }
 
   /api/holidays:
     get:
@@ -872,6 +1318,8 @@ paths:
                 latitude: { type: number, nullable: true }
                 longitude: { type: number, nullable: true }
                 radiusMeters: { type: integer, minimum: 20, maximum: 5000, default: 200 }
+                timeZone: { type: string, nullable: true, description: "IANA zone; null = organization zone" }
+                weekOff: { type: string, nullable: true, example: "0,6#2,6#4", description: "Week-off pattern (see OrganizationSettings.weekOff); null = organization pattern" }
       responses:
         "201":
           description: Created
@@ -904,6 +1352,8 @@ paths:
                 latitude: { type: number, nullable: true }
                 longitude: { type: number, nullable: true }
                 radiusMeters: { type: integer, minimum: 20, maximum: 5000 }
+                timeZone: { type: string, nullable: true, description: "IANA zone; null = organization zone" }
+                weekOff: { type: string, nullable: true, example: "0,6#2,6#4", description: "Week-off pattern (see OrganizationSettings.weekOff); null = organization pattern" }
       responses:
         "200":
           description: OK
@@ -915,6 +1365,103 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "A location with this name already exists" }
         "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/shifts:
+    get:
+      tags: [Attendance]
+      summary: List work shifts
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Shift" }
+    post:
+      tags: [Attendance]
+      summary: Create a shift (attendance.manage_shifts)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, startTime, endTime]
+              additionalProperties: false
+              properties:
+                name: { type: string, maxLength: 60 }
+                startTime: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$" }
+                endTime: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$" }
+                graceMinutes: { type: integer, minimum: 0, maximum: 240, default: 15 }
+                halfDayMinutes: { type: integer, minimum: 0, maximum: 1440, default: 240 }
+                fullDayMinutes: { type: integer, minimum: 1, maximum: 1440, default: 480 }
+                isDefault: { type: boolean, default: false, description: "The first shift is always the default" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Shift" }
+        "400": { description: "Half-day minimum above the full-day minimum (INVALID_THRESHOLDS)" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: "A shift with this name already exists" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/shifts/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [Attendance]
+      summary: Edit a shift or make it the default (attendance.manage_shifts)
+      description: Changes apply from the next punch; days already recorded keep their figures.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name: { type: string, maxLength: 60 }
+                startTime: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$" }
+                endTime: { type: string, pattern: "^([01]\\d|2[0-3]):[0-5]\\d$" }
+                graceMinutes: { type: integer, minimum: 0, maximum: 240 }
+                halfDayMinutes: { type: integer, minimum: 0, maximum: 1440 }
+                fullDayMinutes: { type: integer, minimum: 1, maximum: 1440 }
+                isDefault: { type: boolean, description: "Make this the default; false is rejected for the current default" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Shift" }
+        "400": { description: "INVALID_THRESHOLDS, or un-defaulting the default (DEFAULT_REQUIRED)" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "A shift with this name already exists" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    delete:
+      tags: [Attendance]
+      summary: Delete a shift; its employees fall back to the default (attendance.manage_shifts)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "The default can't be deleted while other shifts exist (DEFAULT_REQUIRED)" }
 
   /api/attendance:
     get:
@@ -949,6 +1496,9 @@ paths:
                       leave: { type: number }
                       holidays: { type: integer }
                       workedMinutes: { type: integer }
+                      lateDays: { type: integer }
+                      earlyExitDays: { type: integer }
+                      overtimeMinutes: { type: integer }
         "403": { $ref: "#/components/responses/Forbidden" }
 
   /api/attendance/report:
@@ -966,6 +1516,106 @@ paths:
       responses:
         "200":
           description: OK (JSON or CSV depending on `format`)
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/attendance/edits:
+    get:
+      tags: [Attendance]
+      summary: Audit trail of admin edits and imports for an employee (newest first, up to 200)
+      description: Visible to the employee and to whoever can view their attendance.
+      parameters:
+        - in: query
+          name: employeeId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: month
+          schema: { type: string, pattern: "^\\d{4}-\\d{2}$" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/AttendanceEdit" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Attendance]
+      summary: Set or clear one day of someone else's attendance (attendance.edit)
+      description: >-
+        Setting replaces the day's sessions with one entry and recomputes shift metrics; clearing (both times null)
+        deletes the day. Times are wall-clock in the employee's zone (check-out at or before check-in = next day).
+        Cannot target yourself, a future date or a date before the join date; 400 NO_CHANGE when the day already matches.
+        The employee is notified (ATTENDANCE_EDITED).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [employeeId, date, checkIn, checkOut, reason]
+              properties:
+                employeeId: { type: string }
+                date: { type: string, format: date }
+                checkIn: { type: string, nullable: true, example: "09:00", description: "HH:mm, or null together with checkOut to clear the day" }
+                checkOut: { type: string, nullable: true, example: "18:00" }
+                reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AttendanceEdit" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/attendance/import:
+    post:
+      tags: [Attendance]
+      summary: Import attendance from CSV (attendance.edit)
+      description: >-
+        CSV columns (header names are case/space insensitive): employee (code or email), date (YYYY-MM-DD),
+        checkIn, checkOut (HH:mm in the employee's zone), optional reason. Up to 500 rows. `dryRun` (default true)
+        validates and reports what would change without writing; with `dryRun: false` all rows are applied, or
+        none if any row has an error (400 IMPORT_HAS_ERRORS). Existing days are replaced; each change is audited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [csv]
+              properties:
+                csv: { type: string, maxLength: 500000 }
+                dryRun: { type: boolean, default: true }
+                reason: { type: string, maxLength: 500, description: "Used for rows without their own reason" }
+      responses:
+        "200":
+          description: Preview or result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rows:
+                    type: array
+                    items: { $ref: "#/components/schemas/AttendanceImportRow" }
+                  summary:
+                    type: object
+                    properties:
+                      total: { type: integer }
+                      create: { type: integer }
+                      update: { type: integer }
+                      unchanged: { type: integer }
+                      errors: { type: integer }
+                  applied: { type: integer, description: "Days written; 0 for a dry run" }
+        "400": { $ref: "#/components/responses/ValidationError" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
   /api/attendance/regularizations:
@@ -1142,6 +1792,75 @@ paths:
       summary: Delete a role; its members fall back to their org role's default permissions (org admins only)
       responses:
         "200": { description: OK }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/employees/{id}/profile:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Employees]
+      summary: Extended profile (personal, emergency, employment, identity and bank details), by section the caller may see
+      description: >-
+        personal / emergency / employment are visible to the employee, their direct manager and employees.edit holders.
+        sensitive (PAN, Aadhaar, passport, bank) is visible only to the employee and holders of employees.view_sensitive
+        or employees.edit_sensitive. 403 when the caller can see no section. `access` tells the client what to show.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmployeeProfile" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Employees]
+      summary: Update profile fields (partial; null or blank clears a field)
+      description: >-
+        Editable by section: personal and emergency by the employee and employees.edit; employment by employees.edit;
+        sensitive only by employees.edit_sensitive (an employee cannot change their own). If any field is in a section the
+        caller can't edit, nothing is written and the response is 403. PAN, Aadhaar, IFSC and similar are upper-cased and
+        stripped of spaces/dashes; phone numbers are stored as E.164.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                dateOfBirth: { type: string, nullable: true, format: date }
+                gender: { type: string, nullable: true, enum: [MALE, FEMALE, OTHER, UNDISCLOSED, null] }
+                maritalStatus: { type: string, nullable: true, enum: [SINGLE, MARRIED, DIVORCED, WIDOWED, UNDISCLOSED, null] }
+                bloodGroup: { type: string, nullable: true, enum: ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", null] }
+                nationality: { type: string, nullable: true }
+                personalEmail: { type: string, nullable: true }
+                currentAddress: { type: string, nullable: true }
+                permanentAddress: { type: string, nullable: true }
+                emergencyName: { type: string, nullable: true }
+                emergencyRelation: { type: string, nullable: true }
+                emergencyPhone: { type: string, nullable: true, description: E.164 }
+                employmentType: { type: string, nullable: true, enum: [FULL_TIME, PART_TIME, CONTRACT, INTERN, CONSULTANT, null] }
+                probationEndDate: { type: string, nullable: true, format: date }
+                noticePeriodDays: { type: integer, nullable: true, minimum: 0, maximum: 365 }
+                panNumber: { type: string, nullable: true, example: ABCDE1234F }
+                aadhaarNumber: { type: string, nullable: true, description: 12 digits }
+                passportNumber: { type: string, nullable: true }
+                bankAccountName: { type: string, nullable: true }
+                bankName: { type: string, nullable: true }
+                bankAccountNumber: { type: string, nullable: true, description: 6-20 digits }
+                bankIfsc: { type: string, nullable: true, example: HDFC0001234 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmployeeProfile" }
+        "400": { $ref: "#/components/responses/ValidationError" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 

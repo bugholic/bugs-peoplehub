@@ -1,8 +1,10 @@
 import { z } from "zod";
-import { isIsoDate } from "./dates";
+import { isIsoDate, isValidTimeZone } from "./dates";
+import { isValidWeekOff, normalizeWeekOff } from "./week-off";
 import { badRequest } from "./errors";
 import { isPermission } from "./permissions";
 import { normalizePhone } from "./phone";
+import { BLOOD_GROUPS, EMPLOYMENT_TYPES, GENDERS, MARITAL_STATUSES } from "./profile-fields";
 
 const isoDate = z.string().refine(isIsoDate, "Must be a date in YYYY-MM-DD format");
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Must be a time in HH:mm format");
@@ -32,6 +34,8 @@ export const employeeCreateSchema = z.object({
   designationId: id.optional().nullable(),
   locationId: id.optional().nullable(),
   reportingManagerId: id.optional().nullable(),
+  // null = the organization default shift
+  shiftId: id.optional().nullable(),
 });
 
 // Roles live in Clerk (organization roles), not on the employee record.
@@ -41,6 +45,49 @@ export const employeeUpdateSchema = employeeCreateSchema.partial().extend({
 
 /** Fields an employee may change on their own profile. */
 export const selfUpdateSchema = z.object({ phone }).strict();
+
+// ---- Extended profile (T20). Every field may be null to clear it; send only the fields to change. ----
+const optText = (max: number) => z.string().trim().max(max).transform((v) => v || null).nullable();
+/** Upper-cased, spaces and dashes removed, then matched against `re`. "" clears. */
+const idNumber = (re: RegExp, what: string) =>
+  z
+    .string()
+    .max(40)
+    .transform((v) => v.replace(/[\s-]/g, "").toUpperCase())
+    .refine((v) => v === "" || re.test(v), `Not a valid ${what}`)
+    .transform((v) => v || null)
+    .nullable();
+
+export const employeeProfileSchema = z
+  .object({
+    dateOfBirth: isoDate.refine((d) => d < new Date().toISOString().slice(0, 10), "Must be in the past").nullable(),
+    gender: z.enum(GENDERS).nullable(),
+    maritalStatus: z.enum(MARITAL_STATUSES).nullable(),
+    bloodGroup: z.enum(BLOOD_GROUPS).nullable(),
+    nationality: optText(60),
+    personalEmail: z.union([z.literal("").transform(() => null), z.email().max(120)]).nullable(),
+    currentAddress: optText(300),
+    permanentAddress: optText(300),
+
+    emergencyName: optText(100),
+    emergencyRelation: optText(50),
+    emergencyPhone: phone,
+
+    employmentType: z.enum(EMPLOYMENT_TYPES).nullable(),
+    probationEndDate: isoDate.nullable(),
+    noticePeriodDays: z.number().int().min(0).max(365).nullable(),
+
+    panNumber: idNumber(/^[A-Z]{5}[0-9]{4}[A-Z]$/, "PAN (like ABCDE1234F)"),
+    aadhaarNumber: idNumber(/^\d{12}$/, "Aadhaar number (12 digits)"),
+    passportNumber: idNumber(/^[A-Z0-9]{6,9}$/, "passport number"),
+    bankAccountName: optText(100),
+    bankName: optText(100),
+    bankAccountNumber: idNumber(/^\d{6,20}$/, "account number (6-20 digits)"),
+    bankIfsc: idNumber(/^[A-Z]{4}0[A-Z0-9]{6}$/, "IFSC (like HDFC0001234)"),
+  })
+  .partial()
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, "Nothing to update");
 
 export const employeeListQuery = z.object({
   q: z.string().trim().optional(),
@@ -59,11 +106,27 @@ export const leaveApplySchema = z.object({
   reason: z.string().trim().min(3).max(500),
 });
 
+/** Combined leave: one date range split across leave types, in order (full days only). */
+export const leaveCombinedApplySchema = z.object({
+  fromDate: isoDate,
+  toDate: isoDate,
+  reason: z.string().trim().min(3).max(500),
+  parts: z
+    .array(z.object({ leaveTypeId: id, days: z.number().int().min(1).max(366) }))
+    .min(2, "A combined leave needs at least two leave types")
+    .max(5),
+});
+
+export const leavePreviewQuery = leaveApplySchema.omit({ reason: true });
+
 export const leaveListQuery = z.object({
   scope: z.enum(["mine", "team", "all"]).default("mine"),
   status: z.enum(["PENDING", "APPROVED", "REJECTED", "CANCELLED"]).optional(),
   year: z.coerce.number().int().min(2000).max(2100).optional(),
 });
+
+// First day back at work (everything from here on is released); optional note shown to the employee on a revoke.
+export const leaveShortenSchema = z.object({ returnOn: isoDate, note: z.string().trim().max(500).optional() }).strict();
 
 export const decisionSchema = z.object({ note: z.string().trim().max(500).optional() });
 
@@ -135,8 +198,51 @@ export async function readPunchLocation(req: Request) {
   return punchLocationSchema.parse(body);
 }
 
+const timeZone = z.string().refine(isValidTimeZone, "Must be an IANA time zone, e.g. Asia/Kolkata");
+
+// Week-off pattern (src/lib/week-off.ts), stored canonical.
+const weekOff = z
+  .string()
+  .max(100)
+  .refine(isValidWeekOff, "Pattern like \"0,6\" or \"0,6#2,6#4\" (0 = Sunday); at least one weekday must stay working")
+  .transform(normalizeWeekOff);
+
+const hhmmOrNull = hhmm.nullable();
+
+export const attendanceEditSchema = z
+  .object({
+    employeeId: z.string().min(1),
+    date: isoDate,
+    // Both set = the day's times (employee's zone; check-out <= check-in = next day); both null = clear the day.
+    checkIn: hhmmOrNull,
+    checkOut: hhmmOrNull,
+    reason: z.string().trim().min(3).max(500),
+  })
+  .strict()
+  .refine((v) => (v.checkIn === null) === (v.checkOut === null), { message: "Set both times, or neither to clear the day", path: ["checkOut"] });
+
+export const attendanceImportSchema = z
+  .object({
+    csv: z.string().min(1).max(500_000),
+    dryRun: z.boolean().default(true),
+    reason: z.string().trim().max(500).optional(),
+  })
+  .strict();
+
+export const attendanceEditsQuery = z.object({ employeeId: z.string().min(1), month: z.string().regex(/^\d{4}-\d{2}$/).optional() });
+
+export const organizationSettingsSchema = z
+  .object({ timeZone, weekOff })
+  .partial()
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, "Nothing to update");
+
 export const locationCreateSchema = z.object({
   name: z.string().trim().min(1).max(100),
+  // null = the organization's zone
+  timeZone: timeZone.nullable().optional(),
+  // null = the organization's week-off pattern
+  weekOff: weekOff.nullable().optional(),
   latitude: latitude.nullable().optional(),
   longitude: longitude.nullable().optional(),
   radiusMeters: z.number().int().min(20).max(5000).default(200),
@@ -146,6 +252,27 @@ export const locationUpdateSchema = locationCreateSchema.partial().extend({
   // Redeclared without `.default(...)`, as in employeeUpdateSchema.
   radiusMeters: z.number().int().min(20).max(5000).optional(),
 });
+
+const shiftFields = {
+  name: z.string().trim().min(1).max(60),
+  startTime: hhmm,
+  endTime: hhmm,
+  graceMinutes: z.number().int().min(0).max(240),
+  halfDayMinutes: z.number().int().min(0).max(24 * 60),
+  fullDayMinutes: z.number().int().min(1).max(24 * 60),
+  isDefault: z.boolean(),
+};
+export const shiftCreateSchema = z
+  .object(shiftFields)
+  .extend({
+    graceMinutes: shiftFields.graceMinutes.default(15),
+    halfDayMinutes: shiftFields.halfDayMinutes.default(240),
+    fullDayMinutes: shiftFields.fullDayMinutes.default(480),
+    isDefault: shiftFields.isDefault.default(false),
+  })
+  .strict();
+// Built from the default-free fields: .partial() would keep the defaults and overwrite on PATCH.
+export const shiftUpdateSchema = z.object(shiftFields).partial().strict();
 
 export const remoteRequestListQuery = z.object({
   scope: z.enum(["mine", "all"]).default("mine"),
@@ -174,3 +301,30 @@ export const accessRoleSchema = z.object({
 export const accessRoleUpdateSchema = accessRoleSchema.partial();
 
 export const assignAccessRoleSchema = z.object({ accessRoleId: id.nullable() });
+
+export const balanceAdjustmentSchema = z.object({
+  employeeId: id,
+  leaveTypeId: id,
+  year: z.number().int().min(2000).max(2100),
+  // Signed: positive credits, negative debits. Half-day granularity.
+  days: z
+    .number()
+    .min(-365)
+    .max(365)
+    .multipleOf(0.5)
+    .refine((n) => n !== 0, "An adjustment can't be zero days"),
+  reason: z.string().trim().min(3).max(500),
+});
+
+export const balanceAdjustmentListQuery = z.object({
+  employeeId: id.optional(),
+  year: z.coerce.number().int().min(2000).max(2100).optional(),
+});
+
+export const notificationListQuery = z.object({
+  unread: z.enum(["true", "false"]).optional().transform((v) => v === "true"),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+/** `ids` omitted = mark all read. */
+export const notificationReadSchema = z.object({ ids: z.array(id).min(1).max(200).optional() }).strict();

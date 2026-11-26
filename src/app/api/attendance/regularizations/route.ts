@@ -3,6 +3,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import { requireSession, route, readJson, can, forbidden } from "@/lib/authz";
 import { regularizationSchema, regularizationListQuery, parseQuery } from "@/lib/validators";
+import { onRegularizationSubmitted } from "@/lib/notification-events";
 import { requestRegularization } from "@/lib/attendance";
 import { toIsoDate } from "@/lib/dates";
 
@@ -36,7 +37,8 @@ export const GET = route(async (req) => {
   } else if (can(session, "attendance.approve_all")) {
     where.employeeId = { not: session.employeeId }; // everyone else's; your own are under "mine"
   } else if (can(session, "attendance.approve_team")) {
-    where.employee = { reportingManagerId: session.employeeId };
+    // Direct reports, plus anything routed to you (escalated from a manager below you).
+    where.OR = [{ employee: { reportingManagerId: session.employeeId } }, { approverId: session.employeeId }];
   } else {
     throw forbidden();
   }
@@ -48,6 +50,7 @@ export const POST = route(async (req) => {
   const session = await requireSession();
   const body = regularizationSchema.parse(await readJson(req));
   const created = await requestRegularization(session.employeeId, body);
+  await onRegularizationSubmitted(created.id, session.organizationId);
   const full = await db.regularizationRequest.findUniqueOrThrow({ where: { id: created.id }, include });
   return NextResponse.json(serialize(full), { status: 201 });
 });

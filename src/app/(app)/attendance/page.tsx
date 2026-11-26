@@ -1,10 +1,15 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
 import { apiFetch, errorMessage } from "@/lib/api-client";
-import { Alert, Avatar, Badge, Button, Card, CardTitle, EmptyState, Field, Input, PageHeader, Segmented, Spinner, Table, Tabs, Textarea } from "@/components/ui";
+import { useTabParam } from "@/hooks/use-tab-param";
+import { Alert, Avatar, Badge, Button, Card, CardTitle, EmptyState, Field, Input, PageHeader, Segmented, Select, Spinner, Table, Tabs, Textarea } from "@/components/ui";
 import { CheckIcon, DownloadIcon, LogInIcon, LogOutIcon, PinIcon, XIcon } from "@/components/icons";
-import { formatDate, formatMinutes, formatTime, parseIsoDate, todayIso } from "@/lib/dates";
+import { formatDate, formatMinutes, formatTime, parseIsoDate, timeZoneOptions, todayIso } from "@/lib/dates";
+import { DEFAULT_WEEK_OFF, describeWeekOff, isValidWeekOff } from "@/lib/week-off";
+import { WeekOffEditor } from "@/components/week-off-editor";
+import { ShiftsTab } from "./shifts-tab";
+import { EditRecordsTab } from "./edit-records-tab";
 import { currentPosition, punch as punchWithLocation, punchMessage, WORK_MODE_LABEL, type PunchAction, type PunchLog } from "@/lib/punch";
 
 type RequestStatus = "PENDING" | "APPROVED" | "REJECTED";
@@ -25,8 +30,18 @@ type RemoteRequest = {
   status: RequestStatus;
   approver: { name: string } | null;
 };
-type OfficeLocation = { id: string; name: string; latitude: number | null; longitude: number | null; radiusMeters: number; isOffice: boolean };
-type Summary = { present: number; absent: number; leave: number; holidays: number; workedMinutes: number };
+type OfficeLocation = { id: string; name: string; latitude: number | null; longitude: number | null; radiusMeters: number; isOffice: boolean; timeZone: string | null; weekOff: string | null };
+type Summary = {
+  present: number;
+  absent: number;
+  leave: number;
+  holidays: number;
+  workedMinutes: number;
+  lateDays: number;
+  earlyExitDays: number;
+  overtimeMinutes: number;
+};
+type ReportRow = Summary & { empCode: string; name: string };
 type Regularization = {
   id: string;
   employee: { name: string; empCode: string };
@@ -38,11 +53,20 @@ type Regularization = {
 };
 type Me = { employeeId: string; permissions: string[] };
 
-const TABS = ["My attendance", "Regularizations", "Remote work", "Team report", "Office locations"] as const;
+const TABS = ["My attendance", "Regularizations", "Remote work", "Team report", "Office locations", "Shifts", "Edit records"] as const;
 
 export default function AttendancePage() {
+  // useTabParam reads useSearchParams, which needs a Suspense boundary.
+  return (
+    <Suspense fallback={<Spinner />}>
+      <AttendancePageContent />
+    </Suspense>
+  );
+}
+
+function AttendancePageContent() {
   const [me, setMe] = useState<Me | null>(null);
-  const [tab, setTab] = useState<(typeof TABS)[number]>("My attendance");
+  const [tab, setTab] = useTabParam(TABS, "My attendance");
 
   useEffect(() => {
     apiFetch<{ session: Me }>("/api/me").then((r) => setMe(r.session)).catch(() => {});
@@ -53,7 +77,11 @@ export default function AttendancePage() {
   const isHr = can("attendance.remote_approve");
   const canReport = can("attendance.report_team") || can("attendance.report_all");
   const canLocations = can("attendance.manage_locations");
-  const visibleTabs = TABS.filter((t) => (t === "Team report" ? canReport : t === "Office locations" ? canLocations : true));
+  const canShifts = can("attendance.manage_shifts");
+  const canEdit = can("attendance.edit");
+  const visibleTabs = TABS.filter((t) =>
+    t === "Team report" ? canReport : t === "Office locations" ? canLocations : t === "Shifts" ? canShifts : t === "Edit records" ? canEdit : true,
+  );
 
   return (
     <div>
@@ -65,18 +93,20 @@ export default function AttendancePage() {
       {tab === "Remote work" && <RemoteWorkTab isHr={isHr} myId={me?.employeeId} />}
       {tab === "Team report" && canReport && <TeamReportTab />}
       {tab === "Office locations" && canLocations && <OfficeLocationsTab />}
+      {tab === "Shifts" && canShifts && <ShiftsTab />}
+      {tab === "Edit records" && canEdit && <EditRecordsTab />}
     </div>
   );
 }
 
 function Stat({ label, value, tone }: { label: string; value: string | number; tone: string }) {
   return (
-    <div className="rounded-2xl border border-line bg-surface p-4 shadow-card">
-      <p className="flex items-center gap-2 text-[13px] text-ink-3">
+    <div className="rounded-2xl border border-border bg-card p-4 shadow-xs">
+      <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
         <span className={`size-2 rounded-full ${tone}`} />
         {label}
       </p>
-      <p className="mt-1 font-display text-2xl font-semibold tabular-nums text-ink">{value}</p>
+      <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{value}</p>
     </div>
   );
 }
@@ -141,22 +171,22 @@ function MyAttendanceTab() {
     <div className="space-y-5">
       {error && <Alert>{error}</Alert>}
 
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-night p-5 text-white shadow-card ring-1 ring-inset ring-white/5">
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-night p-5 text-white shadow-xs ring-1 ring-inset ring-white/5">
         <div className="flex flex-wrap gap-x-8 gap-y-3 text-sm">
           <div>
             <p className="text-white/50">First in</p>
-            <p className="font-display text-xl font-semibold tabular-nums">{formatTime(today?.checkIn ? new Date(today.checkIn) : null)}</p>
+            <p className="text-xl font-semibold tabular-nums">{formatTime(today?.checkIn ? new Date(today.checkIn) : null)}</p>
           </div>
           <div>
             <p className="text-white/50">{onTheClock ? "In since" : "Last out"}</p>
-            <p className="font-display text-xl font-semibold tabular-nums">
+            <p className="text-xl font-semibold tabular-nums">
               {formatTime(onTheClock ? new Date(today!.openSince!) : today?.checkOut ? new Date(today.checkOut) : null)}
             </p>
           </div>
           {today?.workMode && (
             <div>
               <p className="text-white/50">Working from</p>
-              <p className="flex items-center gap-1.5 font-display text-xl font-semibold">
+              <p className="flex items-center gap-1.5 text-xl font-semibold">
                 <PinIcon size={16} className="text-marigold" />
                 {WORK_MODE_LABEL[today.workMode]}
               </p>
@@ -164,22 +194,25 @@ function MyAttendanceTab() {
           )}
         </div>
         <div className="flex gap-2">
-          <button
+          <Button
+            size="lg"
             disabled={busy || onTheClock}
             onClick={() => punch("check-in")}
-            className="inline-flex h-10 items-center gap-2 rounded-xl bg-marigold px-4 text-sm font-semibold text-night disabled:opacity-40"
+            className="bg-marigold text-night hover:bg-marigold/90"
           >
             <LogInIcon size={16} />
             {busy && !onTheClock ? "Locating…" : today?.sessions.length ? "Check in again" : "Check in"}
-          </button>
-          <button
+          </Button>
+          <Button
+            size="lg"
+            variant="secondary"
             disabled={busy || !onTheClock}
             onClick={() => punch("check-out")}
-            className="inline-flex h-10 items-center gap-2 rounded-xl bg-white/10 px-4 text-sm font-semibold text-white ring-1 ring-inset ring-white/15 hover:bg-white/15 disabled:opacity-40"
+            className="border-white/15 bg-white/10 text-white hover:bg-white/15 dark:bg-white/10 dark:hover:bg-white/15"
           >
             <LogOutIcon size={16} />
             {busy && onTheClock ? "Locating…" : "Check out"}
-          </button>
+          </Button>
         </div>
         {today && today.sessions.length > 1 && (
           <ol className="flex basis-full flex-wrap gap-2 text-[13px]" aria-label="Today's sessions">
@@ -195,7 +228,7 @@ function MyAttendanceTab() {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-display text-lg font-semibold text-ink">Monthly log</h2>
+        <h2 className="text-lg font-semibold text-foreground">Monthly log</h2>
         <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="max-w-44" aria-label="Month" />
       </div>
 
@@ -207,6 +240,17 @@ function MyAttendanceTab() {
           <Stat label="Hours worked" value={formatMinutes(summary.workedMinutes)} tone="bg-marigold" />
         </div>
       )}
+      {summary && (summary.lateDays > 0 || summary.earlyExitDays > 0 || summary.overtimeMinutes > 0) && (
+        <p className="text-sm text-muted-foreground">
+          {[
+            summary.lateDays && `${summary.lateDays} late ${summary.lateDays === 1 ? "arrival" : "arrivals"}`,
+            summary.earlyExitDays && `${summary.earlyExitDays} early ${summary.earlyExitDays === 1 ? "exit" : "exits"}`,
+            summary.overtimeMinutes && `${formatMinutes(summary.overtimeMinutes)} overtime`,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      )}
 
       {!days ? (
         <Spinner />
@@ -215,10 +259,10 @@ function MyAttendanceTab() {
           {days.map((d) => {
             const isToday = d.date === todayIso();
             return (
-              <tr key={d.date} className={isToday ? "bg-brand-soft/60" : "hover:bg-surface-2"}>
+              <tr key={d.date} className={isToday ? "bg-accent/60" : "hover:bg-muted"}>
                 <td className="px-5 py-3">
-                  <span className="font-medium text-ink">{formatDate(d.date)}</span>
-                  <span className="ml-2 text-[13px] text-ink-3">{parseIsoDate(d.date).toLocaleString("en-GB", { weekday: "short", timeZone: "UTC" })}</span>
+                  <span className="font-medium text-foreground">{formatDate(d.date)}</span>
+                  <span className="ml-2 text-[13px] text-muted-foreground">{parseIsoDate(d.date).toLocaleString("en-GB", { weekday: "short", timeZone: "UTC" })}</span>
                 </td>
                 <td className="px-5 py-3">
                   <Badge status={d.status} />
@@ -227,17 +271,30 @@ function MyAttendanceTab() {
                   {d.workMode ? (
                     <span className="flex items-center gap-2">
                       <Badge status={d.workMode}>{WORK_MODE_LABEL[d.workMode]}</Badge>
-                      {d.remoteStatus && <span className="text-[13px] text-ink-3">HR {d.remoteStatus.toLowerCase()}</span>}
+                      {d.remoteStatus && <span className="text-[13px] text-muted-foreground">HR {d.remoteStatus.toLowerCase()}</span>}
                     </span>
                   ) : (
-                    <span className="text-ink-3">—</span>
+                    <span className="text-muted-foreground">—</span>
                   )}
                 </td>
-                <td className="px-5 py-3 tabular-nums text-ink-2">{formatTime(d.checkIn ? new Date(d.checkIn) : null)}</td>
-                <td className="px-5 py-3 tabular-nums text-ink-2">{d.openSince ? "On the clock" : formatTime(d.checkOut ? new Date(d.checkOut) : null)}</td>
-                <td className="px-5 py-3 tabular-nums text-ink-2">
+                <td className="px-5 py-3 tabular-nums text-foreground/80">{formatTime(d.checkIn ? new Date(d.checkIn) : null)}</td>
+                <td className="px-5 py-3 tabular-nums text-foreground/80">
+                  {d.openSince ? "On the clock" : formatTime(d.checkOut ? new Date(d.checkOut) : null)}
+                  {d.edited && (
+                    <span className="mt-0.5 block text-[12px] font-medium text-sky-700 dark:text-sky-300" title="Set by an administrator; the reason is in the audit trail.">
+                      Edited by admin
+                    </span>
+                  )}
+                  {d.autoClosed && (
+                    <span className="mt-0.5 block text-[12px] font-medium text-amber-700 dark:text-amber-300" title="You didn't check out; closed by the system. Request a correction if the time is wrong.">
+                      Auto-closed
+                    </span>
+                  )}
+                </td>
+                <td className="px-5 py-3 tabular-nums text-foreground/80">
                   {d.workedMinutes ? formatMinutes(d.workedMinutes) : "—"}
-                  {d.sessions.length > 1 && <span className="ml-1.5 text-[13px] text-ink-3">({d.sessions.length} sessions)</span>}
+                  {d.sessions.length > 1 && <span className="ml-1.5 text-[13px] text-muted-foreground">({d.sessions.length} sessions)</span>}
+                  <ShiftFlags day={d} />
                 </td>
               </tr>
             );
@@ -247,7 +304,7 @@ function MyAttendanceTab() {
 
       <Card className="max-w-xl">
         <CardTitle>Fix a missed check-in</CardTitle>
-        <p className="-mt-2 mb-4 text-sm text-ink-3">Forgot to punch? Send the correct times to your manager for approval.</p>
+        <p className="-mt-2 mb-4 text-sm text-muted-foreground">Forgot to punch? Send the correct times to your manager for approval.</p>
         <form onSubmit={submitReg} className="flex flex-col gap-4">
           <Field label="Date">
             <Input type="date" required max={todayIso()} value={regForm.date} onChange={(e) => setRegForm((f) => ({ ...f, date: e.target.value }))} />
@@ -270,6 +327,25 @@ function MyAttendanceTab() {
         </form>
       </Card>
     </div>
+  );
+}
+
+/** Late-in / early-out / overtime markers for one day (shift rules, T13). */
+function ShiftFlags({ day }: { day: Pick<Day, "lateMinutes" | "earlyExitMinutes" | "overtimeMinutes"> }) {
+  const flags = [
+    day.lateMinutes > 0 && { label: `Late ${formatMinutes(day.lateMinutes)}`, tone: "text-amber-700 dark:text-amber-300" },
+    day.earlyExitMinutes > 0 && { label: `Left ${formatMinutes(day.earlyExitMinutes)} early`, tone: "text-amber-700 dark:text-amber-300" },
+    day.overtimeMinutes > 0 && { label: `OT ${formatMinutes(day.overtimeMinutes)}`, tone: "text-emerald-700 dark:text-emerald-300" },
+  ].filter((f): f is { label: string; tone: string } => !!f);
+  if (!flags.length) return null;
+  return (
+    <span className="mt-0.5 flex flex-wrap gap-x-2 text-[12px] font-medium">
+      {flags.map((f) => (
+        <span key={f.label} className={f.tone}>
+          {f.label}
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -333,12 +409,12 @@ function RegularizationsTab({ isApprover }: { isApprover: boolean }) {
             <Card key={r.id} className="flex flex-wrap items-center gap-4 p-4 sm:p-4">
               {scope === "team" && <Avatar name={r.employee.name} />}
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-ink">
+                <p className="text-sm font-semibold text-foreground">
                   {scope === "team" ? r.employee.name : formatDate(r.date)}
-                  {scope === "team" && <span className="font-normal text-ink-3"> for {formatDate(r.date)}</span>}
+                  {scope === "team" && <span className="font-normal text-muted-foreground"> for {formatDate(r.date)}</span>}
                 </p>
-                <p className="text-[13px] text-ink-3">
-                  <span className="tabular-nums text-ink-2">
+                <p className="text-[13px] text-muted-foreground">
+                  <span className="tabular-nums text-foreground/80">
                     {formatTime(new Date(r.checkIn))}–{formatTime(new Date(r.checkOut))}
                   </span>{" "}
                   · {r.reason}
@@ -369,7 +445,7 @@ function RegularizationsTab({ isApprover }: { isApprover: boolean }) {
 
 function TeamReportTab() {
   const [month, setMonth] = useState(todayIso().slice(0, 7));
-  const [rows, setRows] = useState<{ empCode: string; name: string; present: number; absent: number; leave: number; holidays: number; workedMinutes: number }[] | null>(null);
+  const [rows, setRows] = useState<ReportRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -384,7 +460,7 @@ function TeamReportTab() {
         <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="max-w-44" aria-label="Month" />
         <a
           href={`/api/attendance/report?month=${month}&format=csv`}
-          className="inline-flex h-10 items-center gap-2 rounded-xl border border-line bg-surface px-4 text-sm font-semibold text-ink hover:bg-surface-2"
+          className="inline-flex h-10 items-center gap-2 rounded-xl border border-border bg-card px-4 text-sm font-semibold text-foreground hover:bg-muted"
         >
           <DownloadIcon size={16} />
           Download CSV
@@ -396,22 +472,24 @@ function TeamReportTab() {
       ) : rows.length === 0 ? (
         <EmptyState>No attendance recorded for this month</EmptyState>
       ) : (
-        <Table head={["Employee", "Present", "Absent", "Leave", "Worked"]} minWidth={600}>
+        <Table head={["Employee", "Present", "Absent", "Leave", "Late", "Worked", "Overtime"]} minWidth={760}>
           {rows.map((r) => (
-            <tr key={r.empCode} className="hover:bg-surface-2">
+            <tr key={r.empCode} className="hover:bg-muted">
               <td className="px-5 py-3">
                 <div className="flex items-center gap-3">
                   <Avatar name={r.name} size="sm" />
                   <span>
-                    <span className="block font-semibold text-ink">{r.name}</span>
-                    <span className="block font-mono text-xs text-ink-3">{r.empCode}</span>
+                    <span className="block font-semibold text-foreground">{r.name}</span>
+                    <span className="block font-mono text-xs text-muted-foreground">{r.empCode}</span>
                   </span>
                 </div>
               </td>
               <td className="px-5 py-3 tabular-nums text-emerald-700 dark:text-emerald-300">{r.present}</td>
-              <td className="px-5 py-3 tabular-nums text-ink-2">{r.absent}</td>
-              <td className="px-5 py-3 tabular-nums text-ink-2">{r.leave}</td>
-              <td className="px-5 py-3 tabular-nums font-medium text-ink">{formatMinutes(r.workedMinutes)}</td>
+              <td className="px-5 py-3 tabular-nums text-foreground/80">{r.absent}</td>
+              <td className="px-5 py-3 tabular-nums text-foreground/80">{r.leave}</td>
+              <td className="px-5 py-3 tabular-nums text-foreground/80">{r.lateDays || "—"}</td>
+              <td className="px-5 py-3 tabular-nums font-medium text-foreground">{formatMinutes(r.workedMinutes)}</td>
+              <td className="px-5 py-3 tabular-nums text-foreground/80">{r.overtimeMinutes ? formatMinutes(r.overtimeMinutes) : "—"}</td>
             </tr>
           ))}
         </Table>
@@ -483,19 +561,19 @@ function RemoteWorkTab({ isHr, myId }: { isHr: boolean; myId?: string }) {
             <Card key={r.id} className="flex flex-wrap items-center gap-4 p-4 sm:p-4">
               {scope === "all" && <Avatar name={r.employee.name} />}
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-ink">
+                <p className="text-sm font-semibold text-foreground">
                   {scope === "all" ? r.employee.name : formatDate(r.date)}
-                  {scope === "all" && <span className="font-normal text-ink-3"> for {formatDate(r.date)}</span>}
+                  {scope === "all" && <span className="font-normal text-muted-foreground"> for {formatDate(r.date)}</span>}
                 </p>
-                <p className="text-[13px] text-ink-3">
-                  <span className="tabular-nums text-ink-2">
+                <p className="text-[13px] text-muted-foreground">
+                  <span className="tabular-nums text-foreground/80">
                     {formatTime(new Date(r.checkIn))}–{formatTime(new Date(r.checkOut))}
                   </span>{" "}
                   · {formatMinutes(r.workedMinutes)} worked
                   {r.latitude !== null && r.longitude !== null && (
                     <>
                       {" · "}
-                      <a href={mapLink(r.latitude, r.longitude)} target="_blank" rel="noreferrer" className="font-medium text-brand-ink hover:underline">
+                      <a href={mapLink(r.latitude, r.longitude)} target="_blank" rel="noreferrer" className="font-medium text-accent-foreground hover:underline">
                         Check-in location
                       </a>
                     </>
@@ -526,8 +604,9 @@ function RemoteWorkTab({ isHr, myId }: { isHr: boolean; myId?: string }) {
   );
 }
 
-type LocationForm = { id: string | null; name: string; latitude: string; longitude: string; radiusMeters: string };
-const EMPTY_FORM: LocationForm = { id: null, name: "", latitude: "", longitude: "", radiusMeters: "200" };
+// weekOff null = the organization's pattern
+type LocationForm = { id: string | null; name: string; latitude: string; longitude: string; radiusMeters: string; timeZone: string; weekOff: string | null };
+const EMPTY_FORM: LocationForm = { id: null, name: "", latitude: "", longitude: "", radiusMeters: "200", timeZone: "", weekOff: null };
 
 /** Admin: mark which locations are offices by giving them a centre point and radius. */
 function OfficeLocationsTab() {
@@ -555,7 +634,7 @@ function OfficeLocationsTab() {
   function edit(l: OfficeLocation) {
     setMessage(null);
     setError(null);
-    setForm({ id: l.id, name: l.name, latitude: l.latitude?.toString() ?? "", longitude: l.longitude?.toString() ?? "", radiusMeters: String(l.radiusMeters) });
+    setForm({ id: l.id, name: l.name, latitude: l.latitude?.toString() ?? "", longitude: l.longitude?.toString() ?? "", radiusMeters: String(l.radiusMeters), timeZone: l.timeZone ?? "", weekOff: l.weekOff });
   }
 
   async function useMyLocation() {
@@ -577,7 +656,7 @@ function OfficeLocationsTab() {
       clearGeofence || (!form.latitude.trim() && !form.longitude.trim())
         ? { latitude: null, longitude: null }
         : { latitude: Number(form.latitude), longitude: Number(form.longitude) };
-    const body = JSON.stringify({ name: form.name, radiusMeters: Number(form.radiusMeters), ...geofence });
+    const body = JSON.stringify({ name: form.name, radiusMeters: Number(form.radiusMeters), timeZone: form.timeZone || null, weekOff: form.weekOff, ...geofence });
     try {
       if (form.id) await apiFetch(`/api/locations/${form.id}`, { method: "PATCH", body });
       else await apiFetch("/api/locations", { method: "POST", body });
@@ -594,9 +673,9 @@ function OfficeLocationsTab() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-xl text-sm text-ink-3">
-          Check-ins within an office&apos;s radius are logged as <strong className="text-ink-2">office</strong>. Anywhere else counts as{" "}
-          <strong className="text-ink-2">remote</strong>, and checking out sends HR a remote work request.
+        <p className="max-w-xl text-sm text-muted-foreground">
+          Check-ins within an office&apos;s radius are logged as <strong className="text-foreground/80">office</strong>. Anywhere else counts as{" "}
+          <strong className="text-foreground/80">remote</strong>, and checking out sends HR a remote work request.
         </p>
         <Button onClick={() => setForm({ ...EMPTY_FORM })}>Add location</Button>
       </div>
@@ -618,6 +697,23 @@ function OfficeLocationsTab() {
                 <Input type="number" step="any" min={-180} max={180} placeholder="77.594600" value={form.longitude} onChange={(e) => setForm({ ...form, longitude: e.target.value })} />
               </Field>
             </div>
+            <Field label="Time zone">
+              <Select value={form.timeZone} onChange={(e) => setForm({ ...form, timeZone: e.target.value })}>
+                <option value="">Organization default</option>
+                {timeZoneOptions().map((z) => (
+                  <option key={z} value={z}>
+                    {z.replaceAll("_", " ")}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Weekly off">
+              <Select value={form.weekOff === null ? "" : "custom"} onChange={(e) => setForm({ ...form, weekOff: e.target.value ? (form.weekOff ?? DEFAULT_WEEK_OFF) : null })}>
+                <option value="">Organization default</option>
+                <option value="custom">Different for this location</option>
+              </Select>
+            </Field>
+            {form.weekOff !== null && <WeekOffEditor value={form.weekOff} onChange={(weekOff) => setForm({ ...form, weekOff })} />}
             <Field label="Radius (metres)">
               <Input type="number" required min={20} max={5000} value={form.radiusMeters} onChange={(e) => setForm({ ...form, radiusMeters: e.target.value })} />
             </Field>
@@ -633,7 +729,7 @@ function OfficeLocationsTab() {
               )}
             </div>
             <div className="flex gap-2">
-              <Button type="submit" disabled={saving}>
+              <Button type="submit" disabled={saving || (form.weekOff !== null && !isValidWeekOff(form.weekOff))}>
                 {saving ? "Saving…" : "Save"}
               </Button>
               <Button type="button" variant="ghost" onClick={() => setForm(null)}>
@@ -649,14 +745,14 @@ function OfficeLocationsTab() {
       ) : items.length === 0 ? (
         <EmptyState hint="Add your office so check-ins there count as office days.">No locations yet</EmptyState>
       ) : (
-        <Table head={["Location", "Type", "Centre", "Radius", ""]} minWidth={640}>
+        <Table head={["Location", "Type", "Centre", "Radius", "Weekly off", ""]} minWidth={760}>
           {items.map((l) => (
-            <tr key={l.id} className="hover:bg-surface-2">
-              <td className="px-5 py-3 font-semibold text-ink">{l.name}</td>
+            <tr key={l.id} className="hover:bg-muted">
+              <td className="px-5 py-3 font-semibold text-foreground">{l.name}</td>
               <td className="px-5 py-3">
                 <Badge status={l.isOffice ? "OFFICE" : "REMOTE"}>{l.isOffice ? "Office" : "Not an office"}</Badge>
               </td>
-              <td className="px-5 py-3 font-mono text-xs text-ink-2">
+              <td className="px-5 py-3 font-mono text-xs text-foreground/80">
                 {l.isOffice ? (
                   <a href={mapLink(l.latitude!, l.longitude!, 17)} target="_blank" rel="noreferrer" className="hover:underline">
                     {l.latitude!.toFixed(5)}, {l.longitude!.toFixed(5)}
@@ -665,7 +761,8 @@ function OfficeLocationsTab() {
                   "—"
                 )}
               </td>
-              <td className="px-5 py-3 tabular-nums text-ink-2">{l.isOffice ? `${l.radiusMeters} m` : "—"}</td>
+              <td className="px-5 py-3 tabular-nums text-foreground/80">{l.isOffice ? `${l.radiusMeters} m` : "—"}</td>
+              <td className="px-5 py-3 text-foreground/80">{l.weekOff === null ? <span className="text-muted-foreground">Organization default</span> : describeWeekOff(l.weekOff)}</td>
               <td className="px-5 py-3 text-right">
                 <Button size="sm" variant="secondary" onClick={() => edit(l)}>
                   {l.isOffice ? "Edit" : "Set geofence"}

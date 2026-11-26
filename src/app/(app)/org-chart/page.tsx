@@ -5,6 +5,7 @@ import Link from "next/link";
 import { apiFetch, errorMessage } from "@/lib/api-client";
 import { Alert, Avatar, Button, PageHeader, Spinner, cx } from "@/components/ui";
 import { ChevronLeftIcon, FocusIcon, MinusIcon, PlusIcon } from "@/components/icons";
+import { ButtonGroup, ButtonGroupText } from "@/components/ui/button-group";
 
 type Node = { id: string; name: string; title: string | null; photoUrl: string | null; managerId: string | null };
 type Tree = Node & { children: Tree[]; size: number };
@@ -123,27 +124,17 @@ export default function OrgChartPage() {
       {!tree ? (
         !error && <Spinner />
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-line bg-surface-2 shadow-card">
-          <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface px-4 py-2.5">
-            <div className="inline-flex items-center rounded-xl ring-1 ring-inset ring-line">
-              <button
-                onClick={() => setZoom((z) => Math.max(0, z - 1))}
-                disabled={zoom === 0}
-                aria-label="Zoom out"
-                className="inline-flex size-8 items-center justify-center rounded-l-xl text-ink-2 hover:bg-surface-2 hover:text-ink disabled:opacity-40"
-              >
-                <MinusIcon size={15} />
-              </button>
-              <span className="w-12 text-center text-xs font-semibold tabular-nums text-ink-2">{Math.round(ZOOM_STEPS[zoom] * 100)}%</span>
-              <button
-                onClick={() => setZoom((z) => Math.min(ZOOM_STEPS.length - 1, z + 1))}
-                disabled={zoom === ZOOM_STEPS.length - 1}
-                aria-label="Zoom in"
-                className="inline-flex size-8 items-center justify-center rounded-r-xl text-ink-2 hover:bg-surface-2 hover:text-ink disabled:opacity-40"
-              >
-                <PlusIcon size={15} />
-              </button>
-            </div>
+        <div className="overflow-hidden rounded-xl border bg-muted/40 shadow-xs">
+          <div className="flex flex-wrap items-center gap-2 border-b border-border bg-card px-4 py-2.5">
+            <ButtonGroup aria-label="Zoom">
+              <Button variant="secondary" size="icon-sm" onClick={() => setZoom((z) => Math.max(0, z - 1))} disabled={zoom === 0} aria-label="Zoom out">
+                <MinusIcon />
+              </Button>
+              <ButtonGroupText className="w-14 justify-center text-xs tabular-nums">{Math.round(ZOOM_STEPS[zoom] * 100)}%</ButtonGroupText>
+              <Button variant="secondary" size="icon-sm" onClick={() => setZoom((z) => Math.min(ZOOM_STEPS.length - 1, z + 1))} disabled={zoom === ZOOM_STEPS.length - 1} aria-label="Zoom in">
+                <PlusIcon />
+              </Button>
+            </ButtonGroup>
             <Button variant="ghost" size="sm" onClick={() => setCollapsed(new Set())}>
               Expand all
             </Button>
@@ -166,7 +157,7 @@ export default function OrgChartPage() {
             onPointerCancel={endDrag}
             className="h-[calc(100vh-17rem)] min-h-[26rem] cursor-grab overflow-auto select-none active:cursor-grabbing"
             style={{
-              backgroundImage: "radial-gradient(color-mix(in srgb, var(--ink-3) 22%, transparent) 1px, transparent 1px)",
+              backgroundImage: "radial-gradient(color-mix(in srgb, var(--muted-foreground) 22%, transparent) 1px, transparent 1px)",
               backgroundSize: "18px 18px",
             }}
           >
@@ -220,17 +211,17 @@ function NodeCard({ node, open, onToggle, isMe, root }: { node: Tree; open: bool
       <div
         data-me={isMe || undefined}
         className={cx(
-          "relative w-52 overflow-hidden rounded-2xl border bg-surface px-4 pb-4 pt-5 text-center shadow-card transition-shadow hover:shadow-md",
-          isMe ? "border-brand ring-4 ring-brand/15" : root ? "border-brand/30" : "border-line",
+          "relative w-52 overflow-hidden rounded-2xl border bg-card px-4 pb-4 pt-5 text-center shadow-xs transition-shadow hover:shadow-md",
+          isMe ? "border-primary ring-4 ring-primary/15" : root ? "border-primary/30" : "border-border",
         )}
       >
-        <span aria-hidden className={cx("absolute inset-x-0 top-0 h-1", isMe || root ? "bg-brand" : "bg-line")} />
+        <span aria-hidden className={cx("absolute inset-x-0 top-0 h-1", isMe || root ? "bg-primary" : "bg-border")} />
         <Avatar name={node.name} size={root ? "lg" : "md"} photoUrl={node.photoUrl} className="mx-auto" />
-        <Link href={`/employees/${node.id}`} className="mt-2.5 block truncate font-semibold text-ink hover:text-brand-ink">
+        <Link href={`/employees/${node.id}`} className="mt-2.5 block truncate font-semibold text-foreground hover:text-accent-foreground">
           {node.name}
         </Link>
-        <p className="truncate text-[13px] text-ink-3">{node.title ?? "No designation"}</p>
-        {isMe && <span className="mt-2 inline-block rounded-full bg-brand-soft px-2 py-0.5 text-[11px] font-semibold text-brand-ink">You</span>}
+        <p className="truncate text-[13px] text-muted-foreground">{node.title ?? "No designation"}</p>
+        {isMe && <span className="mt-2 inline-block rounded-full bg-accent px-2 py-0.5 text-[11px] font-semibold text-accent-foreground">You</span>}
       </div>
       {reports > 0 && (
         <button
@@ -240,7 +231,7 @@ function NodeCard({ node, open, onToggle, isMe, root }: { node: Tree; open: bool
           title={`${reports} direct ${reports === 1 ? "report" : "reports"}, ${node.size} in total`}
           className={cx(
             "relative z-10 -mt-3 inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold shadow-sm transition-colors",
-            open ? "border-line bg-surface text-ink-2 hover:text-ink" : "border-brand bg-brand text-white hover:bg-brand-hover",
+            open ? "border-border bg-card text-foreground/80 hover:text-foreground" : "border-primary bg-primary text-primary-foreground hover:bg-primary/90",
           )}
         >
           {open ? reports : node.size}

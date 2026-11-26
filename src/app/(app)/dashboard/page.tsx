@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiFetch, errorMessage } from "@/lib/api-client";
 import { Alert, Avatar, Button, Card, CardTitle, PageHeader, Spinner } from "@/components/ui";
 import { CheckIcon, LogInIcon, LogOutIcon, PinIcon, XIcon } from "@/components/icons";
-import { APP_TZ, formatDate, formatDuration, formatMinutes, formatTime, parseIsoDate, todayIso } from "@/lib/dates";
+import { displayTimeZone, formatDate, formatDuration, formatMinutes, formatTime, parseIsoDate, todayIso } from "@/lib/dates";
 import { punch as punchWithLocation, punchMessage, WORK_MODE_LABEL, type PunchAction, type PunchLog } from "@/lib/punch";
 
 type Me = { session: { name: string; permissions: string[] }; employee: { id: string } };
@@ -147,11 +147,11 @@ export default function DashboardPage() {
         <TodayCard today={today} busy={busy} notice={notice} onPunch={punch} />
 
         <Card>
-          <CardTitle action={<Link href="/leave" className="text-[13px] font-semibold text-brand-ink hover:underline">Apply</Link>}>
+          <CardTitle action={<Link href="/leave" className="text-[13px] font-semibold text-accent-foreground hover:underline">Apply</Link>}>
             Leave balance
           </CardTitle>
           {balances.length === 0 ? (
-            <p className="text-sm text-ink-3">No leave types set up yet.</p>
+            <p className="text-sm text-muted-foreground">No leave types set up yet.</p>
           ) : (
             <ul className="space-y-4">
               {balances.map((b) => {
@@ -159,14 +159,14 @@ export default function DashboardPage() {
                 return (
                   <li key={b.leaveTypeId}>
                     <div className="flex items-baseline justify-between">
-                      <span className="text-sm font-medium text-ink-2">{b.name}</span>
-                      <span className="font-display text-lg font-semibold tabular-nums text-ink">
+                      <span className="text-sm font-medium text-foreground/80">{b.name}</span>
+                      <span className="text-lg font-semibold tabular-nums text-foreground">
                         {b.available}
-                        <span className="text-sm font-normal text-ink-3"> / {b.granted} days</span>
+                        <span className="text-sm font-normal text-muted-foreground"> / {b.granted} days</span>
                       </span>
                     </div>
-                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-2 ring-1 ring-inset ring-line">
-                      <div className="h-full rounded-full bg-brand" style={{ width: `${pct}%` }} />
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-border">
+                      <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
                     </div>
                   </li>
                 );
@@ -186,7 +186,7 @@ export default function DashboardPage() {
             >
               Needs your approval
             </CardTitle>
-            <ul className="-mx-2 divide-y divide-line">
+            <ul className="-mx-2 divide-y divide-border">
               {pendingLeave.map((r) => (
                 <ApprovalRow
                   key={r.id}
@@ -229,20 +229,20 @@ export default function DashboardPage() {
         <Card className={pendingCount > 0 ? "" : "lg:col-span-3"}>
           <CardTitle>Upcoming holidays</CardTitle>
           {holidays.length === 0 ? (
-            <p className="text-sm text-ink-3">No more holidays this year.</p>
+            <p className="text-sm text-muted-foreground">No more holidays this year.</p>
           ) : (
             <ul className={pendingCount > 0 ? "space-y-3" : "grid gap-3 sm:grid-cols-2 lg:grid-cols-5"}>
               {holidays.map((h) => {
                 const d = parseIsoDate(h.date);
                 return (
-                  <li key={h.id} className="flex items-center gap-3 rounded-xl bg-surface-2 p-2.5 ring-1 ring-inset ring-line">
-                    <span className="flex size-12 shrink-0 flex-col items-center justify-center rounded-lg bg-surface leading-none ring-1 ring-line">
+                  <li key={h.id} className="flex items-center gap-3 rounded-xl bg-muted p-2.5 ring-1 ring-inset ring-border">
+                    <span className="flex size-12 shrink-0 flex-col items-center justify-center rounded-lg bg-card leading-none ring-1 ring-border">
                       <span className="text-[10px] font-semibold text-rose-500">{d.toLocaleString("en-GB", { month: "short", timeZone: "UTC" })}</span>
-                      <span className="mt-0.5 font-display text-lg font-semibold text-ink">{d.getUTCDate()}</span>
+                      <span className="mt-0.5 text-lg font-semibold text-foreground">{d.getUTCDate()}</span>
                     </span>
                     <span className="min-w-0">
-                      <span className="block truncate text-sm font-semibold text-ink">{h.name}</span>
-                      <span className="block text-xs text-ink-3">{d.toLocaleString("en-GB", { weekday: "long", timeZone: "UTC" })}</span>
+                      <span className="block truncate text-sm font-semibold text-foreground">{h.name}</span>
+                      <span className="block text-xs text-muted-foreground">{d.toLocaleString("en-GB", { weekday: "long", timeZone: "UTC" })}</span>
                     </span>
                   </li>
                 );
@@ -286,8 +286,8 @@ function TodayCard({
   const state = onTheClock ? (sessionCount > 1 ? `On the clock · session ${sessionCount}` : "On the clock") : checkedOut ? "Checked out" : "Not checked in";
 
   return (
-    <section className="relative overflow-hidden rounded-2xl bg-night p-6 text-white shadow-card ring-1 ring-inset ring-white/5 sm:p-7 lg:col-span-2">
-      <div aria-hidden className="pointer-events-none absolute -right-16 -top-24 size-72 rounded-full bg-brand/35 blur-3xl" />
+    <section className="relative overflow-hidden rounded-2xl bg-night p-6 text-white shadow-xs ring-1 ring-inset ring-white/5 sm:p-7 lg:col-span-2">
+      <div aria-hidden className="pointer-events-none absolute -right-16 -top-24 size-72 rounded-full bg-primary/35 blur-3xl" />
       <div className="relative flex flex-col gap-8 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="flex items-center gap-2 text-sm text-white/60">
@@ -300,7 +300,7 @@ function TodayCard({
               </span>
             )}
           </p>
-          <p className="mt-2 font-display text-6xl font-semibold tabular-nums tracking-tight sm:text-7xl">{formatTime(now, APP_TZ)}</p>
+          <p className="mt-2 text-6xl font-semibold tabular-nums tracking-tight sm:text-7xl">{formatTime(now)}</p>
 
           <dl className="mt-6 flex gap-8 text-sm">
             <div>
@@ -317,23 +317,26 @@ function TodayCard({
 
           <div className="mt-6 flex flex-wrap gap-2">
             {!onTheClock ? (
-              <button
+              <Button
+                size="lg"
                 disabled={busy === "check-in"}
                 onClick={() => onPunch("check-in")}
-                className="inline-flex h-11 items-center gap-2 rounded-xl bg-marigold px-5 text-sm font-semibold text-night transition-transform hover:brightness-105 active:translate-y-px disabled:opacity-60"
+                className="bg-marigold text-night hover:bg-marigold/90"
               >
                 <LogInIcon size={17} />
                 {busy === "check-in" ? "Locating…" : checkedOut ? "Check in again" : "Check in"}
-              </button>
+              </Button>
             ) : (
-              <button
+              <Button
+                size="lg"
+                variant="secondary"
                 disabled={busy === "check-out"}
                 onClick={() => onPunch("check-out")}
-                className="inline-flex h-11 items-center gap-2 rounded-xl bg-white px-5 text-sm font-semibold text-night transition-transform hover:bg-white/90 active:translate-y-px disabled:opacity-60"
+                className="border-transparent bg-white text-night hover:bg-white/90 dark:bg-white dark:hover:bg-white/90"
               >
                 <LogOutIcon size={17} />
                 {busy === "check-out" ? "Locating…" : "Check out"}
-              </button>
+              </Button>
             )}
           </div>
           {(notice || today?.remoteStatus) && (
@@ -360,7 +363,7 @@ function TodayCard({
             />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="font-display text-lg font-semibold tabular-nums">{formatDuration(workedSeconds)}</span>
+            <span className="text-lg font-semibold tabular-nums">{formatDuration(workedSeconds)}</span>
             <span className="text-xs text-white/50">of {WORKDAY_MINUTES / 60}h today</span>
           </div>
         </div>
@@ -390,10 +393,10 @@ function ApprovalRow({
     <li className="flex flex-wrap items-center gap-3 px-2 py-3.5">
       <Avatar name={name} />
       <div className="min-w-0 flex-1">
-        <p className="text-sm text-ink">
-          <span className="font-semibold">{name}</span> <span className="text-ink-3">requested</span> {title.toLowerCase()}
+        <p className="text-sm text-foreground">
+          <span className="font-semibold">{name}</span> <span className="text-muted-foreground">requested</span> {title.toLowerCase()}
         </p>
-        <p className="truncate text-[13px] text-ink-3">
+        <p className="truncate text-[13px] text-muted-foreground">
           {detail}
           {reason ? `. “${reason}”` : ""}
         </p>
@@ -413,7 +416,7 @@ function ApprovalRow({
 }
 
 function greeting() {
-  const h = Number(new Intl.DateTimeFormat("en-GB", { timeZone: APP_TZ, hour: "2-digit", hourCycle: "h23" }).format(new Date()));
+  const h = Number(new Intl.DateTimeFormat("en-GB", { timeZone: displayTimeZone(), hour: "2-digit", hourCycle: "h23" }).format(new Date()));
   return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
 }
 

@@ -4,13 +4,14 @@ const ORG = "org_test_leave_balances";
 vi.mock("@clerk/nextjs/server", () => ({ auth: async () => ({ orgId: ORG }) }));
 
 import { db, dbUnscoped } from "../db";
-import { applyLeave, approveLeave, getBalances } from "../leave";
+import { adjustBalance, applyLeave, approveLeave, getBalances, listAdjustments, updateLeaveType } from "../leave";
 import { parseIsoDate, todayIso } from "../dates";
 
 const thisYear = Number(todayIso().slice(0, 4));
 
 async function cleanup() {
   const where = { organizationId: ORG };
+  await dbUnscoped.leaveBalanceAdjustment.deleteMany({ where });
   await dbUnscoped.leaveRequest.deleteMany({ where });
   await dbUnscoped.leaveBalance.deleteMany({ where });
   await dbUnscoped.employee.deleteMany({ where });
@@ -82,5 +83,39 @@ describe.skipIf(!process.env.DATABASE_URL)("leave balances (T1-T4, against the D
   it("never creates rows more than one year ahead", async () => {
     await getBalances(joiner, thisYear + 2);
     expect(await db.leaveBalance.count({ where: { employeeId: joiner, year: thisYear + 2 } })).toBe(0);
+  });
+
+  const earnedOf = async (emp: string, year = thisYear) => (await getBalances(emp, year)).find((x) => x.leaveTypeId === el)!;
+
+  it("credits a balance and records it in the ledger (T5)", async () => {
+    await adjustBalance({ employeeId: joiner, leaveTypeId: el, year: thisYear, days: 2, reason: "Comp-off" }, veteran);
+    expect((await earnedOf(joiner)).annualGrant).toBe(8.5);
+    const [entry] = await listAdjustments(joiner, thisYear);
+    expect(entry).toMatchObject({ days: 2, kind: "MANUAL", reason: "Comp-off", createdBy: { id: veteran } });
+  });
+
+  it("refuses a debit that would take the grant below zero, leaving nothing behind", async () => {
+    await expect(
+      adjustBalance({ employeeId: joiner, leaveTypeId: el, year: thisYear, days: -9, reason: "Too much" }, veteran),
+    ).rejects.toMatchObject({ code: "NEGATIVE_GRANT" });
+    expect((await earnedOf(joiner)).annualGrant).toBe(8.5);
+    expect(await listAdjustments(joiner, thisYear)).toHaveLength(1);
+  });
+
+  it("applies a quota change to this and next year's balances, prorated, keeping manual adjustments (A4)", async () => {
+    const { balancesUpdated } = await updateLeaveType(el, { annualQuota: 18 }, veteran);
+    // joiner: this year (join year, Aug) + next year; veteran: this year
+    expect(balancesUpdated).toBe(3);
+    expect((await earnedOf(joiner)).annualGrant).toBe(9.5); // prorated 7.5 + the manual 2
+    expect((await earnedOf(joiner, thisYear + 1)).annualGrant).toBe(18);
+    expect((await earnedOf(veteran)).annualGrant).toBe(18);
+    const quota = (await listAdjustments(joiner, thisYear)).filter((a) => a.kind === "QUOTA_CHANGE");
+    expect(quota).toHaveLength(1);
+    expect(quota[0].days).toBe(1); // 7.5 - 6.5
+  });
+
+  it("does nothing to balances when other fields change", async () => {
+    const { balancesUpdated } = await updateLeaveType(el, { name: "Earned leave" }, veteran);
+    expect(balancesUpdated).toBe(0);
   });
 });

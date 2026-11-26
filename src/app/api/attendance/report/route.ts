@@ -11,10 +11,23 @@ const query = z.object({
   format: z.enum(["json", "csv"]).default("json"),
 });
 
-function toCsv(rows: { empCode: string; name: string; present: number; absent: number; leave: number; holidays: number; workedMinutes: number }[]) {
-  const header = "Emp Code,Name,Present,Absent,Leave,Holidays,Worked";
+type Row = { empCode: string; name: string } & ReturnType<typeof summarize>;
+
+function toCsv(rows: Row[]) {
+  const header = "Emp Code,Name,Present,Absent,Leave,Holidays,Worked,Late Days,Early Exit Days,Overtime";
   const lines = rows.map((r) =>
-    [r.empCode, r.name, r.present, r.absent, r.leave, r.holidays, formatMinutes(r.workedMinutes)]
+    [
+      r.empCode,
+      r.name,
+      r.present,
+      r.absent,
+      r.leave,
+      r.holidays,
+      formatMinutes(r.workedMinutes),
+      r.lateDays,
+      r.earlyExitDays,
+      formatMinutes(r.overtimeMinutes),
+    ]
       .map((v) => `"${String(v).replace(/"/g, '""')}"`)
       .join(","),
   );

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { auth } from "@clerk/nextjs/server";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
@@ -17,11 +18,30 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 export const dbUnscoped = globalForPrisma.prisma ?? createClient();
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = dbUnscoped;
 
+/**
+ * Explicit tenant for code that runs outside a signed-in request (cron jobs). Request code
+ * never sets it, so there the org always comes from Clerk's auth().
+ */
+const orgContext = new AsyncLocalStorage<{ organizationId: string }>();
+
+/** Runs `fn` with the tenant-scoped `db` (and everything built on it) bound to `organizationId`. */
+export function runAsOrganization<T>(organizationId: string, fn: () => Promise<T>): Promise<T> {
+  if (!organizationId) throw new Error("runAsOrganization needs an organization id");
+  // Await inside run(): Prisma queries are lazy thenables that only execute when awaited, so
+  // returning `fn()`'s PrismaPromise unawaited would run the query outside the context.
+  return orgContext.run({ organizationId }, async () => await fn());
+}
+
 async function activeOrgId(): Promise<string> {
+  const bound = orgContext.getStore();
+  if (bound) return bound.organizationId;
   const { orgId } = await auth();
   if (!orgId) throw new ApiError(403, "NO_ORGANIZATION", "Select an organization to continue");
   return orgId;
 }
+
+/** The organization the tenant-scoped client is bound to right now (job context, else the Clerk session). */
+export const currentOrganizationId = activeOrgId;
 
 type Json = Record<string, unknown>;
 const withOrg = (data: unknown, organizationId: string) =>

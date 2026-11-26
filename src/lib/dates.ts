@@ -1,7 +1,37 @@
+import { DEFAULT_WEEK_OFF, isWeekOff } from "./week-off";
+
 // Date-only values ("2026-10-17") are stored as UTC midnight. Wall-clock times
 // (check-in/out) are real instants, interpreted in the organisation time zone.
 
+/** Fallback zone; the real one is per organization / location (src/lib/timezone.ts). */
 export const APP_TZ = process.env.APP_TZ ?? "Asia/Kolkata";
+
+// Browser only: the signed-in person's zone, set by <TimeZoneScope> in the app layout, so
+// todayIso/formatTime/zonedTimeToUtc default to it. Never set on the server (shared module state
+// across requests); server code passes the zone explicitly.
+let displayTz: string | null = null;
+export function setDisplayTimeZone(tz: string) {
+  if (typeof window !== "undefined") displayTz = tz;
+}
+const defaultTz = () => displayTz ?? APP_TZ;
+/** The zone times are shown in: the signed-in person's in the browser, APP_TZ on the server. */
+export const displayTimeZone = defaultTz;
+
+/** True for an IANA zone the runtime knows (e.g. "Europe/London"). */
+export function isValidTimeZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return tz.includes("/") || tz === "UTC";
+  } catch {
+    return false;
+  }
+}
+
+/** IANA zones for pickers (Intl.supportedValuesOf), UTC first. */
+export function timeZoneOptions(): string[] {
+  const list = typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [APP_TZ];
+  return ["UTC", ...list.filter((z) => z !== "UTC")];
+}
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -28,9 +58,9 @@ export function addDays(d: Date, n: number): Date {
   return r;
 }
 
-export function isWeekend(d: Date): boolean {
-  const day = d.getUTCDay();
-  return day === 0 || day === 6;
+/** True when `d` is a weekly off under `weekOff` (src/lib/week-off.ts; default Sat + Sun). */
+export function isWeekend(d: Date, weekOff: string = DEFAULT_WEEK_OFF): boolean {
+  return isWeekOff(d, weekOff);
 }
 
 /** Every date from `from` to `to`, inclusive. */
@@ -41,7 +71,7 @@ export function eachDay(from: Date, to: Date): Date[] {
 }
 
 /** Today's date in the org time zone, as an ISO date string. */
-export function todayIso(now: Date = new Date(), tz: string = APP_TZ): string {
+export function todayIso(now: Date = new Date(), tz: string = defaultTz()): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: tz,
     year: "numeric",
@@ -67,7 +97,7 @@ function tzOffsetMinutes(instant: Date, tz: string): number {
 }
 
 /** Wall-clock "HH:mm" on an ISO date in `tz` -> UTC instant. */
-export function zonedTimeToUtc(isoDate: string, hhmm: string, tz: string = APP_TZ): Date {
+export function zonedTimeToUtc(isoDate: string, hhmm: string, tz: string = defaultTz()): Date {
   const [h, m] = hhmm.split(":").map(Number);
   const guess = new Date(`${isoDate}T00:00:00Z`);
   guess.setUTCHours(h, m, 0, 0);
@@ -76,7 +106,7 @@ export function zonedTimeToUtc(isoDate: string, hhmm: string, tz: string = APP_T
 }
 
 /** UTC instant -> "HH:mm" in `tz`. */
-export function formatTime(instant: Date | null | undefined, tz: string = APP_TZ): string {
+export function formatTime(instant: Date | null | undefined, tz: string = defaultTz()): string {
   if (!instant) return "—";
   return new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(instant);
 }

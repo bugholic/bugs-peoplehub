@@ -82,6 +82,7 @@ export const POST = route(async (req) => {
       designationId: body.designationId,
       locationId: body.locationId,
       reportingManagerId: body.reportingManagerId,
+      shiftId: body.shiftId,
     },
     select: summary,
   });
